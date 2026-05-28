@@ -15,34 +15,27 @@ def fetch_pin():
         return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
-        # Browser jaisi request bhejne ke liye Headers (taaki Pinterest block na kare)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
-        # Link ko open karke page ka pura code (HTML) download karna
         res = requests.get(link, headers=headers, allow_redirects=True)
         html_content = res.text
+        html_content = html_content.replace("\\/", "/")
         
-        # Title nikalna (Agar mil jaye toh)
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
         if title_match:
-            title = title_match.group(1).replace(" | Pinterest", "")
+            title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # 1. Sabse pehle VIDEO dhoondhna (.mp4 files)
-        video_matches = re.findall(r'(https://[^"]+\.mp4)', html_content)
+        # 1. VIDEO CHECK (.mp4) - From your 2nd code (Working perfectly)
+        video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         
         if video_matches:
-            # Agar bahut saari quality mili toh 720p/HD wali select karna
-            video_url = video_matches[0]
+            video_url = video_matches[0] 
             for v in video_matches:
-                if "720" in v or "1080" in v or "v1.pinimg.com/videos" in v:
+                if "720p" in v or "1080p" in v or "v1.pinimg.com" in v:
                     video_url = v
-                    break
-            
-            # URL me agar ajeeb slashes (\/) hon toh unko theek karna
-            video_url = video_url.replace("\\/", "/")
             
             return jsonify({
                 "status": True, 
@@ -51,7 +44,7 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # 2. Agar video NAHI hai, toh ORIGINAL IMAGE dhoondhna
+        # 2. IMAGE CHECK - Exactly from your 1st code (Working perfectly)
         image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"]+\.(?:jpg|png|gif))', html_content)
         
         if image_matches:
@@ -62,8 +55,7 @@ def fetch_pin():
                 "title": title,
                 "media_url": image_url
             })
-            
-        # Agar dono nahi mile
+
         return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
 
     except Exception as e:
