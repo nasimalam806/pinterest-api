@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
+import re
 
 app = Flask(__name__)
 
@@ -9,41 +10,61 @@ def home():
 
 @app.route('/fetch')
 def fetch_pin():
-    # URL parameter se link lenge (e.g., /fetch?url=https://pin.it/...)
     link = request.args.get('url')
-    
     if not link:
-        return jsonify({"status": False, "error": "Bhai, URL parameter missing hai."}), 400
+        return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
-        # 1. Agar pin.it shortlink hai, toh usko expand karenge
-        if "pin.it" in link:
-            expand_req = requests.get(link, allow_redirects=True)
-            link = expand_req.url
-            
-        # 2. Link me se 15-18 digit ka Pin ID nikalna
-        pin_id = None
-        for part in link.split('/'):
-            if part.isdigit():
-                pin_id = part
-                break
-                
-        if not pin_id:
-            return jsonify({"status": False, "error": "Link se Pin ID extract nahi ho paya."}), 400
-            
-        # 3. Main Vercel API ko hit karke data nikalna
-        api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
-        response = requests.get(api_url).json()
+        # Browser jaisi request bhejne ke liye Headers (taaki Pinterest block na kare)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        }
         
-        # 4. TBC ke liye Clean JSON return karna
-        if "image" in response:
+        # Link ko open karke page ka pura code (HTML) download karna
+        res = requests.get(link, headers=headers, allow_redirects=True)
+        html_content = res.text
+        
+        # Title nikalna (Agar mil jaye toh)
+        title = "Pinterest Download"
+        title_match = re.search(r'<title>(.*?)</title>', html_content)
+        if title_match:
+            title = title_match.group(1).replace(" | Pinterest", "")
+
+        # 1. Sabse pehle VIDEO dhoondhna (.mp4 files)
+        video_matches = re.findall(r'(https://[^"]+\.mp4)', html_content)
+        
+        if video_matches:
+            # Agar bahut saari quality mili toh 720p/HD wali select karna
+            video_url = video_matches[0]
+            for v in video_matches:
+                if "720" in v or "1080" in v or "v1.pinimg.com/videos" in v:
+                    video_url = v
+                    break
+            
+            # URL me agar ajeeb slashes (\/) hon toh unko theek karna
+            video_url = video_url.replace("\\/", "/")
+            
             return jsonify({
                 "status": True, 
-                "title": response.get("title", "Pinterest Download"),
-                "media_url": response["image"]
+                "type": "video", 
+                "title": title,
+                "media_url": video_url
             })
-        else:
-            return jsonify({"status": False, "error": "Media nahi mila ya API ne error diya."})
+
+        # 2. Agar video NAHI hai, toh ORIGINAL IMAGE dhoondhna
+        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"]+\.(?:jpg|png|gif))', html_content)
+        
+        if image_matches:
+            image_url = image_matches[0].replace("\\/", "/")
+            return jsonify({
+                "status": True, 
+                "type": "image", 
+                "title": title,
+                "media_url": image_url
+            })
+            
+        # Agar dono nahi mile
+        return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
