@@ -9,19 +9,15 @@ def home():
 
 @app.route('/fetch')
 def fetch_pin():
-    # URL parameter se link lenge (e.g., /fetch?url=https://pin.it/...)
     link = request.args.get('url')
-    
     if not link:
-        return jsonify({"status": False, "error": "Bhai, URL parameter missing hai."}), 400
+        return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
-        # 1. Agar pin.it shortlink hai, toh usko expand karenge
         if "pin.it" in link:
             expand_req = requests.get(link, allow_redirects=True)
             link = expand_req.url
             
-        # 2. Link me se 15-18 digit ka Pin ID nikalna
         pin_id = None
         for part in link.split('/'):
             if part.isdigit():
@@ -29,21 +25,28 @@ def fetch_pin():
                 break
                 
         if not pin_id:
-            return jsonify({"status": False, "error": "Link se Pin ID extract nahi ho paya."}), 400
+            return jsonify({"status": False, "error": "Pin ID extract nahi ho paya."}), 400
             
-        # 3. Main Vercel API ko hit karke data nikalna
         api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
         response = requests.get(api_url).json()
         
-        # 4. TBC ke liye Clean JSON return karna
-        if "image" in response:
+        # NAYA LOGIC: Pehle video check karo, agar nahi hai toh image do
+        if "video" in response and response["video"]:
             return jsonify({
                 "status": True, 
-                "title": response.get("title", "Pinterest Download"),
+                "type": "video",  # TBC ko batane ke liye ki ye video hai
+                "title": response.get("title", "Pinterest Video"),
+                "media_url": response["video"]
+            })
+        elif "image" in response and response["image"]:
+            return jsonify({
+                "status": True, 
+                "type": "image",  # TBC ko batane ke liye ki ye image hai
+                "title": response.get("title", "Pinterest Image"),
                 "media_url": response["image"]
             })
         else:
-            return jsonify({"status": False, "error": "Media nahi mila ya API ne error diya."})
+            return jsonify({"status": False, "error": "Media nahi mila."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
