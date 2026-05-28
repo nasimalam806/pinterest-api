@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import re
+import html
 
 app = Flask(__name__)
 
@@ -23,12 +24,24 @@ def fetch_pin():
         html_content = res.text
         html_content = html_content.replace("\\/", "/")
         
+        # 1. Title Extract karna aur Telegram HTML ke liye Safe banana
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
+        title = html.escape(title) # Special characters se HTML crash nahi hoga
 
-        # 1. VIDEO CHECK (.mp4) - (Yeh bilkul sahi kaam kar raha hai)
+        # 2. Description Extract karna aur Safe banana
+        description = ""
+        desc_match = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]+)"', html_content) or \
+                     re.search(r'<meta[^>]*content="([^"]+)"[^>]*property="og:description"', html_content)
+        if desc_match:
+            description = desc_match.group(1).strip()
+            if len(description) > 150:
+                description = description[:147] + "..."
+        description = html.escape(description)
+
+        # ---------- 3. VIDEO CHECK ----------
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         
         if video_matches:
@@ -41,23 +54,20 @@ def fetch_pin():
                 "status": True, 
                 "type": "video", 
                 "title": title,
+                "description": description, # Description wapas add kar di
                 "media_url": video_url
             })
 
-        # 2. FIXED IMAGE CHECK (Meta Tag Target - No Logo Mistakes)
+        # ---------- 4. FIXED IMAGE CHECK ----------
         image_url = None
-        
-        # Yeh regex strictly 'og:image' tag me se sirf main post ki photo nikalega, chahe attributes ka order kuch bhi ho
         og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
                    re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
         
         if og_match:
             image_url = og_match.group(1).strip()
-            # Image ko hamesha high-quality (originals) me badalna agar wo choti size me ho
             image_url = image_url.replace("/736x/", "/originals/").replace("/564x/", "/originals/")
-            image_url = image_url.split('?')[0] # Faltu query params saaf karna
+            image_url = image_url.split('?')[0]
 
-        # Fallback: Agar kisi wajah se meta tag fail ho, toh hi purana originals wala tareeka chalega
         if not image_url:
             image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+)', html_content)
             if image_matches:
@@ -68,6 +78,7 @@ def fetch_pin():
                 "status": True, 
                 "type": "image", 
                 "title": title,
+                "description": description, # Image me bhi description bhej rahe hain
                 "media_url": image_url
             })
 
