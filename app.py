@@ -23,23 +23,14 @@ def fetch_pin():
         html_content = res.text
         html_content = html_content.replace("\\/", "/")
         
-        # 1. Title Extract Karna
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # 2. Description Extract Karna (Meta Tag se)
-        description = ""
-        desc_match = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]+)"', html_content)
-        if desc_match:
-            description = desc_match.group(1).strip()
-            # Agar description bohot lambi ho toh usko chhota karna (max 150 chars)
-            if len(description) > 150:
-                description = description[:147] + "..."
-
-        # 3. VIDEO CHECK (.mp4)
+        # 1. VIDEO CHECK (.mp4)
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
+        
         if video_matches:
             video_url = video_matches[0] 
             for v in video_matches:
@@ -50,33 +41,39 @@ def fetch_pin():
                 "status": True, 
                 "type": "video", 
                 "title": title,
-                "description": description,
                 "media_url": video_url
             })
 
-        # 4. IMAGE CHECK
+        # 2. BULLETPROOF IMAGE CHECK (Pure HTML me se direct image domains nikalna)
         image_matches = re.findall(r'(https://i\.pinimg\.com/[^"\'\s>]+)', html_content)
+        
         if image_matches:
             image_url = None
+            
+            # Pehle check karo agar koi direct 'originals' (HQ) image link hai
             for img in image_matches:
                 if "/originals/" in img:
                     image_url = img
                     break
+            
+            # Agar originals nahi mila, toh standard sizes (736x ya 564x) ko originals me convert karo
             if not image_url:
                 for img in image_matches:
                     if "/736x/" in img or "/564x/" in img:
                         image_url = img.replace("/736x/", "/originals/").replace("/564x/", "/originals/")
                         break
+            
+            # Agar phir bhi kuch na set ho paye toh pehli normal image utha lo
             if not image_url:
                 image_url = image_matches[0]
             
+            # Link ke aakhri ka kachra saaf karna (jaise query params ya quotes)
             image_url = image_url.split('?')[0].split('"')[0].split("'")[0]
             
             return jsonify({
                 "status": True, 
                 "type": "image", 
                 "title": title,
-                "description": description,
                 "media_url": image_url
             })
 
