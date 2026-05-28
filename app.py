@@ -44,42 +44,61 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # 2. BULLETPROOF IMAGE CHECK (Fixed for Telegram)
-        # Regex ab sirf valid image formats (.jpg, .jpeg, .png) hi pakdega taaki Telegram error na de
+        # 2. BULLETPROOF IMAGE CHECK (With Live Validation for Telegram)
         image_matches = re.findall(r'(https://i\.pinimg\.com/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
         
         if image_matches:
-            image_url = None
+            # Duplicate links hata kar list choti karna taaki fast chale
+            image_matches = list(set(image_matches))
+            valid_image_url = None
             
-            # Pehle check karo agar koi direct 'originals' (HQ) image link practically exist karta hai
+            # Step A: Pehle 'originals' (HQ) check karna
             for img in image_matches:
                 if "/originals/" in img:
-                    image_url = img
-                    break
+                    try:
+                        # Link ko live check karna ki wo actual Image hai ya Error page
+                        head_res = requests.head(img, timeout=2)
+                        if head_res.status_code == 200 and 'image' in head_res.headers.get('Content-Type', ''):
+                            valid_image_url = img
+                            break
+                    except:
+                        continue
             
-            # Agar originals nahi mila, toh next best quality (736x) dhoondho (bina replace kiye)
-            if not image_url:
+            # Step B: Agar HQ valid nahi hai, toh '736x' (Medium) check karna
+            if not valid_image_url:
                 for img in image_matches:
                     if "/736x/" in img:
-                        image_url = img
-                        break
-            
-            # Agar phir bhi kuch set na ho paye toh pehli normal valid image utha lo
-            if not image_url:
-                image_url = image_matches[0]
-            
-            return jsonify({
-                "status": True, 
-                "type": "image", 
-                "title": title,
-                "media_url": image_url
-            })
+                        try:
+                            head_res = requests.head(img, timeout=2)
+                            if head_res.status_code == 200 and 'image' in head_res.headers.get('Content-Type', ''):
+                                valid_image_url = img
+                                break
+                        except:
+                            continue
+                            
+            # Step C: Fallback, jo bhi pehli valid image mil jaye
+            if not valid_image_url:
+                for img in image_matches:
+                    try:
+                        head_res = requests.head(img, timeout=2)
+                        if head_res.status_code == 200 and 'image' in head_res.headers.get('Content-Type', ''):
+                            valid_image_url = img
+                            break
+                    except:
+                        continue
 
-        return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
+            if valid_image_url:
+                return jsonify({
+                    "status": True, 
+                    "type": "image", 
+                    "title": title,
+                    "media_url": valid_image_url
+                })
+
+        return jsonify({"status": False, "error": "Link se valid media nahi mil paya."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
-    
