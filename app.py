@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🚀 Pinterest Hybrid Wrapper API is Running!"
+    return "🚀 Pinterest Wrapper API is Running!"
 
 @app.route('/fetch')
 def fetch_pin():
@@ -15,33 +15,20 @@ def fetch_pin():
         return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
-        # Step 1: Link ko expand karna agar pin.it hai
-        if "pin.it" in link:
-            expand_req = requests.get(link, allow_redirects=True)
-            link = expand_req.url
-
-        # Step 2: Vercel API ke liye ID nikalna
-        pin_id = None
-        for part in link.split('/'):
-            if part.isdigit():
-                pin_id = part
-                break
-
-        # Browser headers (HTML scrape ke liye)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
-        # HTML download karna
         res = requests.get(link, headers=headers, allow_redirects=True)
-        html_content = res.text.replace("\\/", "/")
+        html_content = res.text
+        html_content = html_content.replace("\\/", "/")
         
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # ---------- PART 1: VIDEO CHECK (From 2nd Code) ----------
+        # 1. VIDEO CHECK (.mp4) - (Yeh bilkul sahi kaam kar raha hai)
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         
         if video_matches:
@@ -57,20 +44,34 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # ---------- PART 2: IMAGE CHECK (From 1st Code - Vercel API) ----------
-        if pin_id:
-            api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
-            response = requests.get(api_url).json()
-            
-            if "image" in response:
-                return jsonify({
-                    "status": True, 
-                    "type": "image",
-                    "title": response.get("title", title), # Agar API me title na ho toh HTML wala use karega
-                    "media_url": response["image"]
-                })
+        # 2. FIXED IMAGE CHECK (Meta Tag Target - No Logo Mistakes)
+        image_url = None
         
-        return jsonify({"status": False, "error": "Link se valid media (video/image) nahi mil paya."})
+        # Yeh regex strictly 'og:image' tag me se sirf main post ki photo nikalega, chahe attributes ka order kuch bhi ho
+        og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
+                   re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
+        
+        if og_match:
+            image_url = og_match.group(1).strip()
+            # Image ko hamesha high-quality (originals) me badalna agar wo choti size me ho
+            image_url = image_url.replace("/736x/", "/originals/").replace("/564x/", "/originals/")
+            image_url = image_url.split('?')[0] # Faltu query params saaf karna
+
+        # Fallback: Agar kisi wajah se meta tag fail ho, toh hi purana originals wala tareeka chalega
+        if not image_url:
+            image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+)', html_content)
+            if image_matches:
+                image_url = image_matches[0].split('?')[0]
+
+        if image_url:
+            return jsonify({
+                "status": True, 
+                "type": "image", 
+                "title": title,
+                "media_url": image_url
+            })
+
+        return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
