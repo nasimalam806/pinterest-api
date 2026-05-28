@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🚀 Pinterest Wrapper API is Running!"
+    return "🚀 Pinterest Hybrid Wrapper API is Running!"
 
 @app.route('/fetch')
 def fetch_pin():
@@ -15,10 +15,24 @@ def fetch_pin():
         return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
+        # Step 1: Link ko expand karna agar pin.it hai
+        if "pin.it" in link:
+            expand_req = requests.get(link, allow_redirects=True)
+            link = expand_req.url
+
+        # Step 2: Vercel API ke liye ID nikalna
+        pin_id = None
+        for part in link.split('/'):
+            if part.isdigit():
+                pin_id = part
+                break
+
+        # Browser headers (HTML scrape ke liye)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
+        # HTML download karna
         res = requests.get(link, headers=headers, allow_redirects=True)
         html_content = res.text.replace("\\/", "/")
         
@@ -27,8 +41,9 @@ def fetch_pin():
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # ---------- 1. VIDEO CHECK ----------
+        # ---------- PART 1: VIDEO CHECK (From 2nd Code) ----------
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
+        
         if video_matches:
             video_url = video_matches[0] 
             for v in video_matches:
@@ -42,37 +57,23 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # ---------- 2. STRICT IMAGE CHECK (ONLY JPG/PNG) ----------
-        # Yahan humne .webp ko ban kar diya hai, sirf valid format hi aayega
-        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
+        # ---------- PART 2: IMAGE CHECK (From 1st Code - Vercel API) ----------
+        if pin_id:
+            api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
+            response = requests.get(api_url).json()
+            
+            if "image" in response:
+                return jsonify({
+                    "status": True, 
+                    "type": "image",
+                    "title": response.get("title", title), # Agar API me title na ho toh HTML wala use karega
+                    "media_url": response["image"]
+                })
         
-        if image_matches:
-            # Faltu parameters hata kar clean URL banaya
-            image_url = image_matches[0].split('?')[0]
-            
-            return jsonify({
-                "status": True, 
-                "type": "image", 
-                "title": title,
-                "media_url": image_url
-            })
-            
-        # Agar originals me nahi mili toh 736x wale me dhoondho (Sirf JPG/PNG)
-        fallback_matches = re.findall(r'(https://i\.pinimg\.com/(?:736x|564x|474x)/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
-        if fallback_matches:
-             image_url = fallback_matches[0].split('?')[0]
-             return jsonify({
-                "status": True, 
-                "type": "image", 
-                "title": title,
-                "media_url": image_url
-            })
-
-        return jsonify({"status": False, "error": "Link se valid media nikal nahi paya."})
+        return jsonify({"status": False, "error": "Link se valid media (video/image) nahi mil paya."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
-    
