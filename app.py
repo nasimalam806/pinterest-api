@@ -19,7 +19,6 @@ def fetch_pin():
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
-        # Request bhejna aur expand karna
         res = requests.get(link, headers=headers, allow_redirects=True)
         html_content = res.text.replace("\\/", "/")
         
@@ -28,7 +27,7 @@ def fetch_pin():
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # ---------- 1. VIDEO CHECK (Working perfect) ----------
+        # ---------- 1. VIDEO CHECK ----------
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         if video_matches:
             video_url = video_matches[0] 
@@ -43,13 +42,13 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # ---------- 2. STRICT ORIGINAL IMAGE CHECK ----------
-        # Hum strictly Vercel aur baaki sab chhod kar sirf 'originals' folder scan karenge
-        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+)', html_content)
+        # ---------- 2. STRICT IMAGE CHECK (ONLY JPG/PNG) ----------
+        # Yahan humne .webp ko ban kar diya hai, sirf valid format hi aayega
+        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
         
         if image_matches:
-            # Agar bohot saare mil gaye toh pehla wala hi main image hota hai
-            image_url = image_matches[0].split('?')[0].split('"')[0].split("'")[0]
+            # Faltu parameters hata kar clean URL banaya
+            image_url = image_matches[0].split('?')[0]
             
             return jsonify({
                 "status": True, 
@@ -58,18 +57,16 @@ def fetch_pin():
                 "media_url": image_url
             })
             
-        # Agar by chance originals me na mile, toh second strict check:
-        # Hum sirf un images ko lenge jinka resolution format likha hota hai (logos me resolution nahi hota)
+        # Agar originals me nahi mili toh 736x wale me dhoondho (Sirf JPG/PNG)
         fallback_matches = re.findall(r'(https://i\.pinimg\.com/(?:736x|564x|474x)/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
         if fallback_matches:
-             image_url = fallback_matches[0].split('?')[0].split('"')[0].split("'")[0]
+             image_url = fallback_matches[0].split('?')[0]
              return jsonify({
                 "status": True, 
                 "type": "image", 
                 "title": title,
                 "media_url": image_url
             })
-
 
         return jsonify({"status": False, "error": "Link se valid media nikal nahi paya."})
 
@@ -78,3 +75,4 @@ def fetch_pin():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
+    
