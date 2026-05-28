@@ -44,31 +44,29 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # 2. BULLETPROOF IMAGE CHECK (Pure HTML me se direct image domains nikalna)
-        image_matches = re.findall(r'(https://i\.pinimg\.com/[^"\'\s>]+)', html_content)
+        # 2. BULLETPROOF IMAGE CHECK (Fixed for Telegram)
+        # Regex ab sirf valid image formats (.jpg, .jpeg, .png) hi pakdega taaki Telegram error na de
+        image_matches = re.findall(r'(https://i\.pinimg\.com/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
         
         if image_matches:
             image_url = None
             
-            # Pehle check karo agar koi direct 'originals' (HQ) image link hai
+            # Pehle check karo agar koi direct 'originals' (HQ) image link practically exist karta hai
             for img in image_matches:
                 if "/originals/" in img:
                     image_url = img
                     break
             
-            # Agar originals nahi mila, toh standard sizes (736x ya 564x) ko originals me convert karo
+            # Agar originals nahi mila, toh next best quality (736x) dhoondho (bina replace kiye)
             if not image_url:
                 for img in image_matches:
-                    if "/736x/" in img or "/564x/" in img:
-                        image_url = img.replace("/736x/", "/originals/").replace("/564x/", "/originals/")
+                    if "/736x/" in img:
+                        image_url = img
                         break
             
-            # Agar phir bhi kuch na set ho paye toh pehli normal image utha lo
+            # Agar phir bhi kuch set na ho paye toh pehli normal valid image utha lo
             if not image_url:
                 image_url = image_matches[0]
-            
-            # Link ke aakhri ka kachra saaf karna (jaise query params ya quotes)
-            image_url = image_url.split('?')[0].split('"')[0].split("'")[0]
             
             return jsonify({
                 "status": True, 
@@ -84,3 +82,4 @@ def fetch_pin():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
+    
