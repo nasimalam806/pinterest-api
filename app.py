@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🚀 Pinterest Wrapper API is Running!"
+    return "🚀 Pinterest True Hybrid API is Running!"
 
 @app.route('/fetch')
 def fetch_pin():
@@ -19,18 +19,18 @@ def fetch_pin():
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
+        # Step 1: Link ko open karna taaki original lamba link mil jaye
         res = requests.get(link, headers=headers, allow_redirects=True)
-        html_content = res.text
-        html_content = html_content.replace("\\/", "/")
+        expanded_link = res.url
+        html_content = res.text.replace("\\/", "/")
         
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # 1. VIDEO CHECK (.mp4) - From your 2nd code (Working perfectly)
+        # ---------- PART 1: VIDEO CHECK (Best from 2nd code) ----------
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
-        
         if video_matches:
             video_url = video_matches[0] 
             for v in video_matches:
@@ -44,18 +44,27 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # 2. IMAGE CHECK - Exactly from your 1st code (Working perfectly)
-        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"]+\.(?:jpg|png|gif))', html_content)
+        # ---------- PART 2: IMAGE CHECK (Best from 1st code - Vercel API) ----------
+        # Expanded link se ID nikalna
+        pin_id = None
+        for part in expanded_link.split('/'):
+            if part.isdigit():
+                pin_id = part
+                break
+                
+        if pin_id:
+            api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
+            # Vercel API se exact data mangwana (No logo mistakes)
+            response = requests.get(api_url).json()
+            
+            if "image" in response:
+                return jsonify({
+                    "status": True, 
+                    "type": "image",
+                    "title": response.get("title", title),
+                    "media_url": response["image"]
+                })
         
-        if image_matches:
-            image_url = image_matches[0].replace("\\/", "/")
-            return jsonify({
-                "status": True, 
-                "type": "image", 
-                "title": title,
-                "media_url": image_url
-            })
-
         return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
 
     except Exception as e:
