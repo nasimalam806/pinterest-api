@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🚀 Pinterest True Hybrid API is Running!"
+    return "🚀 Pinterest Wrapper API is Running!"
 
 @app.route('/fetch')
 def fetch_pin():
@@ -19,9 +19,8 @@ def fetch_pin():
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         
-        # Step 1: Link ko open karna taaki original lamba link mil jaye
+        # Request bhejna aur expand karna
         res = requests.get(link, headers=headers, allow_redirects=True)
-        expanded_link = res.url
         html_content = res.text.replace("\\/", "/")
         
         title = "Pinterest Download"
@@ -29,7 +28,7 @@ def fetch_pin():
         if title_match:
             title = title_match.group(1).replace(" | Pinterest", "").strip()
 
-        # ---------- PART 1: VIDEO CHECK (Best from 2nd code) ----------
+        # ---------- 1. VIDEO CHECK (Working perfect) ----------
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         if video_matches:
             video_url = video_matches[0] 
@@ -44,28 +43,35 @@ def fetch_pin():
                 "media_url": video_url
             })
 
-        # ---------- PART 2: IMAGE CHECK (Best from 1st code - Vercel API) ----------
-        # Expanded link se ID nikalna
-        pin_id = None
-        for part in expanded_link.split('/'):
-            if part.isdigit():
-                pin_id = part
-                break
-                
-        if pin_id:
-            api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
-            # Vercel API se exact data mangwana (No logo mistakes)
-            response = requests.get(api_url).json()
-            
-            if "image" in response:
-                return jsonify({
-                    "status": True, 
-                    "type": "image",
-                    "title": response.get("title", title),
-                    "media_url": response["image"]
-                })
+        # ---------- 2. STRICT ORIGINAL IMAGE CHECK ----------
+        # Hum strictly Vercel aur baaki sab chhod kar sirf 'originals' folder scan karenge
+        image_matches = re.findall(r'(https://i\.pinimg\.com/originals/[^"\'\s>]+)', html_content)
         
-        return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
+        if image_matches:
+            # Agar bohot saare mil gaye toh pehla wala hi main image hota hai
+            image_url = image_matches[0].split('?')[0].split('"')[0].split("'")[0]
+            
+            return jsonify({
+                "status": True, 
+                "type": "image", 
+                "title": title,
+                "media_url": image_url
+            })
+            
+        # Agar by chance originals me na mile, toh second strict check:
+        # Hum sirf un images ko lenge jinka resolution format likha hota hai (logos me resolution nahi hota)
+        fallback_matches = re.findall(r'(https://i\.pinimg\.com/(?:736x|564x|474x)/[^"\'\s>]+\.(?:jpg|jpeg|png))', html_content)
+        if fallback_matches:
+             image_url = fallback_matches[0].split('?')[0].split('"')[0].split("'")[0]
+             return jsonify({
+                "status": True, 
+                "type": "image", 
+                "title": title,
+                "media_url": image_url
+            })
+
+
+        return jsonify({"status": False, "error": "Link se valid media nikal nahi paya."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
