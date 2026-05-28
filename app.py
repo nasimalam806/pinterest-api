@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import requests
-import re
 
 app = Flask(__name__)
 
@@ -15,69 +14,39 @@ def fetch_pin():
         return jsonify({"status": False, "error": "URL parameter missing hai."}), 400
     
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-        }
-        
-        res = requests.get(link, headers=headers, allow_redirects=True)
-        html_content = res.text
-        html_content = html_content.replace("\\/", "/")
-        
-        title = "Pinterest Download"
-        title_match = re.search(r'<title>(.*?)</title>', html_content)
-        if title_match:
-            title = title_match.group(1).replace(" | Pinterest", "").strip()
-
-        # 1. VIDEO CHECK (.mp4)
-        video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
-        
-        if video_matches:
-            video_url = video_matches[0] 
-            for v in video_matches:
-                if "720p" in v or "1080p" in v or "v1.pinimg.com" in v:
-                    video_url = v
+        if "pin.it" in link:
+            expand_req = requests.get(link, allow_redirects=True)
+            link = expand_req.url
             
+        pin_id = None
+        for part in link.split('/'):
+            if part.isdigit():
+                pin_id = part
+                break
+                
+        if not pin_id:
+            return jsonify({"status": False, "error": "Pin ID extract nahi ho paya."}), 400
+            
+        api_url = f"https://pinterest-api-bay.vercel.app/pin/{pin_id}?compact=true"
+        response = requests.get(api_url).json()
+        
+        # NAYA LOGIC: Pehle video check karo, agar nahi hai toh image do
+        if "video" in response and response["video"]:
             return jsonify({
                 "status": True, 
-                "type": "video", 
-                "title": title,
-                "media_url": video_url
+                "type": "video",  # TBC ko batane ke liye ki ye video hai
+                "title": response.get("title", "Pinterest Video"),
+                "media_url": response["video"]
             })
-
-        # 2. BULLETPROOF IMAGE CHECK (Pure HTML me se direct image domains nikalna)
-        image_matches = re.findall(r'(https://i\.pinimg\.com/[^"\'\s>]+)', html_content)
-        
-        if image_matches:
-            image_url = None
-            
-            # Pehle check karo agar koi direct 'originals' (HQ) image link hai
-            for img in image_matches:
-                if "/originals/" in img:
-                    image_url = img
-                    break
-            
-            # Agar originals nahi mila, toh standard sizes (736x ya 564x) ko originals me convert karo
-            if not image_url:
-                for img in image_matches:
-                    if "/736x/" in img or "/564x/" in img:
-                        image_url = img.replace("/736x/", "/originals/").replace("/564x/", "/originals/")
-                        break
-            
-            # Agar phir bhi kuch na set ho paye toh pehli normal image utha lo
-            if not image_url:
-                image_url = image_matches[0]
-            
-            # Link ke aakhri ka kachra saaf karna (jaise query params ya quotes)
-            image_url = image_url.split('?')[0].split('"')[0].split("'")[0]
-            
+        elif "image" in response and response["image"]:
             return jsonify({
                 "status": True, 
-                "type": "image", 
-                "title": title,
-                "media_url": image_url
+                "type": "image",  # TBC ko batane ke liye ki ye image hai
+                "title": response.get("title", "Pinterest Image"),
+                "media_url": response["image"]
             })
-
-        return jsonify({"status": False, "error": "Link se media nikal nahi paya."})
+        else:
+            return jsonify({"status": False, "error": "Media nahi mila."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
