@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import re
 import html
-import concurrent.futures # 🔥 NAYA IMPORT: Superfast speed ke liye
+import concurrent.futures 
 
 app = Flask(__name__)
 
@@ -25,8 +25,7 @@ def fetch_pin():
         }
         
         res = requests.get(link, headers=headers, allow_redirects=True)
-        html_content = res.text
-        html_content = html_content.replace("\\/", "/")
+        html_content = res.text.replace("\\/", "/")
         
         title = "Pinterest Download"
         title_match = re.search(r'<title>(.*?)</title>', html_content)
@@ -71,18 +70,18 @@ def fetch_pin():
 
 
 # ==========================================
-# 🔥 FAST PARALLEL PROCESSING HELPER (NAYA)
+# 🔥 FAST PARALLEL PROCESSING HELPER
 # ==========================================
 def process_single_pin(item):
     pin_url = item.get("url")
     title = item.get("title", "Pinterest Search")
     media_type = "image"
-    media_url = item.get("image", "") # Default low-res image fallback
+    media_url = item.get("image", "") 
     
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        # Sirf 2 second ka timeout taki API atke nahi
-        pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=2.5)
+        # 🔥 TIMEOUT KO 1.2 SECONDS KAR DIYA HAI TAAKI TELEGRAM CRASH NA HO
+        pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=1.2)
         html_content = pin_html_res.text.replace("\\/", "/")
         
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
@@ -100,7 +99,7 @@ def process_single_pin(item):
                 media_url = og_match.group(1).strip().replace("/736x/", "/originals/").replace("/564x/", "/originals/").split('?')[0]
                 
     except Exception:
-        pass # Agar ek link timeout ho jaye toh ignore karo aur default image bhej do
+        pass 
         
     return {
         "type": media_type,
@@ -110,7 +109,7 @@ def process_single_pin(item):
     }
 
 # ==========================================
-# 2. UPDATED: PINTEREST SEARCH ENDPOINT (20-25 Results Ek Sath)
+# 2. PINTEREST SEARCH ENDPOINT (12-15 RESULTS THE SWEET SPOT)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -119,17 +118,16 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # Ab hum API se 25 results mangwayenge
-        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=25&compact=true"
+        # API se results mangwana
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=15&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
             final_results = []
-            items_to_process = response["items"][:25] # 25 ki limit
+            # 🔥 TELEGRAM LIMIT KE LIYE MAXIMUM 12 RESULTS RAKHENGE
+            items_to_process = response["items"][:12] 
             
-            # 🔥 MULTI-THREADING (10 links ek sath process honge)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                # Map array ko process karta hai aur list return karta hai
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
                 results = executor.map(process_single_pin, items_to_process)
                 for res in results:
                     final_results.append(res)
@@ -144,7 +142,5 @@ def search_pins():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
-    
