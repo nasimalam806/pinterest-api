@@ -9,6 +9,9 @@ app = Flask(__name__)
 def home():
     return "🚀 Pinterest Wrapper API is Running!"
 
+# ==========================================
+# 1. ORIGINAL FETCH ENDPOINT (UNTOUCHED)
+# ==========================================
 @app.route('/fetch')
 def fetch_pin():
     link = request.args.get('url')
@@ -86,6 +89,69 @@ def fetch_pin():
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
+
+
+# ==========================================
+# 2. NEW: PINTEREST SEARCH ENDPOINT
+# ==========================================
+@app.route('/search_api')
+def search_pins():
+    query = request.args.get('q')
+    if not query:
+        return jsonify({"status": False, "error": "Query parameter is missing."}), 400
+    
+    try:
+        # Hitting the Vercel API for Search Results
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=5&compact=true"
+        response = requests.get(api_url).json()
+        
+        if "items" in response and len(response["items"]) > 0:
+            results = []
+            for item in response["items"]:
+                results.append({
+                    "title": item.get("title", "Pinterest Image"),
+                    "image_url": item.get("image", ""),
+                    "pin_url": item.get("url", "")
+                })
+            return jsonify({"status": True, "results": results})
+        else:
+            return jsonify({"status": False, "error": "No results found for this keyword."})
+            
+    except Exception as e:
+        return jsonify({"status": False, "error": str(e)}), 500
+
+
+# ==========================================
+# 3. NEW: USER PROFILE ENDPOINT
+# ==========================================
+@app.route('/profile_api')
+def fetch_profile():
+    username = request.args.get('user')
+    if not username:
+        return jsonify({"status": False, "error": "Username parameter is missing."}), 400
+    
+    try:
+        # Hitting the Vercel API for User Profile Details
+        api_url = f"https://pinterest-api-bay.vercel.app/user/{username}"
+        response = requests.get(api_url).json()
+        
+        # Check if the Vercel API returned an error
+        if response.get("status") == "failure":
+            return jsonify({"status": False, "error": response.get("message", "User not found.")})
+            
+        return jsonify({
+            "status": True,
+            "full_name": response.get("full_name", "No Name"),
+            "about": response.get("about", "No bio provided."),
+            "followers": response.get("followers", 0),
+            "following": response.get("following", 0),
+            "total_pins": response.get("pins", 0),
+            "profile_image": response.get("profile_image", "")
+        })
+        
+    except Exception as e:
+        return jsonify({"status": False, "error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
