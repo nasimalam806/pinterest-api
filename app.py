@@ -1,5 +1,5 @@
 # ==========================================
-# 2. UPDATED: PINTEREST SEARCH ENDPOINT (Super Fast - up to 15 Results)
+# 2. ULTIMATE PINTEREST SEARCH (No 3rd Party API, No Limits)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -8,71 +8,53 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # Vercel API se restrict parameters hata diye hain taaki max results aayein
-        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}"
-        response = requests.get(api_url).json()
+        # 🚀 Vercel API hata diya hai, ab seedha Pinterest se data nikalenge
+        url = f"https://in.pinterest.com/search/pins/?q={query}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
         
-        if "items" in response and len(response["items"]) > 0:
-            final_results = []
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-            }
+        res = requests.get(url, headers=headers, timeout=10)
+        
+        # Pinterest ke hidden JSON data ko HTML se extract karna
+        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', res.text)
+        
+        if not match:
+            return jsonify({"status": False, "error": "Pinterest data block or layout changed."})
             
-            # Loop chalana max 15 results ke liye
-            for item in response["items"][:15]:
-                pin_url = item.get("url")
-                title = item.get("title", "Pinterest Search")
-                media_url = item.get("image", "") 
-                media_type = "image"
+        import json # Failsafe
+        data = json.loads(match.group(1))
+        pins_dict = data.get("props", {}).get("initialReduxState", {}).get("pins", {})
+        
+        final_results = []
+        
+        for pin_id, pin_data in pins_dict.items():
+            if len(final_results) >= 15: # 🔥 Yahan humne limit 15 set ki hai!
+                break
                 
-                try:
-                    # 🔥 SMART TRICK: Image ko bina deep scrape kiye sidha HD/Original me convert karna
-                    if media_url and "236x" in media_url:
-                        hd_image_url = media_url.replace("236x", "originals")
-                    elif media_url and "564x" in media_url:
-                        hd_image_url = media_url.replace("564x", "originals")
-                    else:
-                        hd_image_url = media_url
-
-                    # Sirf video check karne ke liye fast request (Timeout 3 sec rakha hai taaki server hang na ho)
-                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=3)
-                    html_content = pin_html_res.text.replace("\\/", "/")
-                    
-                    video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
-                    
-                    if video_matches:
-                        media_type = "video"
-                        media_url = video_matches[0]
-                        for v in video_matches:
-                            # Sabse acchi quality ka video dhundhna
-                            if "720p" in v or "1080p" in v or "v1.pinimg.com" in v:
-                                media_url = v
-                                break
-                    else:
-                        # Agar video nahi hai, toh upar banayi HD image use karenge
-                        media_url = hd_image_url
-                            
-                    # List me add karna
-                    final_results.append({
-                        "type": media_type,
-                        "media_url": media_url,
-                        "title": title,
-                        "pin_url": pin_url
-                    })
-                except Exception:
-                    # Agar kisi pin me error aaye ya timeout ho, toh backup image bhej do aur aage badho
-                    if media_url:
-                        final_results.append({
-                            "type": "image",
-                            "media_url": media_url.replace("236x", "originals"),
-                            "title": title,
-                            "pin_url": pin_url
-                        })
+            # Original (High Quality) Image URL nikalna
+            images = pin_data.get("images", {})
+            media_url = images.get("orig", {}).get("url")
             
-            if final_results:
-                return jsonify({"status": True, "results": final_results})
-            else:
-                return jsonify({"status": False, "error": "Media extract nahi ho paya."})
+            if not media_url:
+                continue
+                
+            title = pin_data.get("title", "")
+            if not title:
+                title = pin_data.get("grid_title", "Pinterest Search")
+                
+            pin_url = f"https://www.pinterest.com/pin/{pin_id}/"
+            
+            final_results.append({
+                "type": "image", # Fast search ke liye images support
+                "media_url": media_url,
+                "title": title,
+                "pin_url": pin_url
+            })
+            
+        if final_results:
+            return jsonify({"status": True, "results": final_results})
         else:
             return jsonify({"status": False, "error": "No results found for this keyword."})
             
