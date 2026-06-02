@@ -1,5 +1,5 @@
 # ==========================================
-# 2. ULTIMATE PINTEREST SEARCH (Internal AJAX API Bypass)
+# 2. UPDATED: PINTEREST SEARCH ENDPOINT (5 Results with Video Support)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -8,57 +8,58 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        import urllib.parse
-        import json
+        # Vercel API se top 5 results mangwana
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=5&compact=true"
+        response = requests.get(api_url).json()
         
-        # Pinterest ka hidden backend server jo direct data bhejta hai
-        options = {"query": query, "scope": "pins", "bookmarks": [""], "page_size": 25}
-        data_param = {"options": options, "context": {}}
-        encoded_data = urllib.parse.quote(json.dumps(data_param))
-        
-        url = f"https://www.pinterest.com/resource/BaseSearchResource/get/?source_url=/search/pins/?q={query}&data={encoded_data}"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "X-Requested-With": "XMLHttpRequest"
-        }
-        
-        res = requests.get(url, headers=headers, timeout=10)
-        res_data = res.json()
-        
-        # Data me se list nikalna
-        results = res_data.get("resource_response", {}).get("data", {}).get("results", [])
-        
-        final_results = []
-        
-        for item in results:
-            if len(final_results) >= 15: # 🔥 Limit 15 kar di gayi hai (Bot 10 dikhayega)
-                break
-                
-            images = item.get("images", {})
-            media_url = images.get("orig", {}).get("url")
+        if "items" in response and len(response["items"]) > 0:
+            final_results = []
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            }
             
-            # Agar image URL nahi mila toh chhod do
-            if not media_url:
-                continue
+            # Loop chalana 5 results ke liye
+            for item in response["items"][:5]:
+                pin_url = item.get("url")
+                title = item.get("title", "Pinterest Search")
                 
-            title = item.get("title", "")
-            if not title:
-                title = item.get("grid_title", "Pinterest Search")
-                
-            pin_id = item.get("id")
-            pin_url = f"https://www.pinterest.com/pin/{pin_id}/"
+                try:
+                    # Deep scraping for each pin
+                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=5)
+                    html_content = pin_html_res.text.replace("\\/", "/")
+                    
+                    video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
+                    media_type = "image"
+                    media_url = item.get("image", "") # Default low-res image
+                    
+                    if video_matches:
+                        media_type = "video"
+                        media_url = video_matches[0]
+                        for v in video_matches:
+                            if "720p" in v or "1080p" in v or "v1.pinimg.com" in v:
+                                media_url = v
+                                break
+                    else:
+                        # Find high-res image
+                        og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
+                                   re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
+                        if og_match:
+                            media_url = og_match.group(1).strip().replace("/736x/", "/originals/").replace("/564x/", "/originals/").split('?')[0]
+                            
+                    # List me add karna
+                    final_results.append({
+                        "type": media_type,
+                        "media_url": media_url,
+                        "title": title,
+                        "pin_url": pin_url
+                    })
+                except Exception:
+                    pass # Agar koi ek fail ho jaye toh aage badho
             
-            final_results.append({
-                "type": "image", 
-                "media_url": media_url,
-                "title": title,
-                "pin_url": pin_url
-            })
-            
-        if len(final_results) > 0:
-            return jsonify({"status": True, "results": final_results})
+            if final_results:
+                return jsonify({"status": True, "results": final_results})
+            else:
+                return jsonify({"status": False, "error": "Media extract nahi ho paya."})
         else:
             return jsonify({"status": False, "error": "No results found for this keyword."})
             
