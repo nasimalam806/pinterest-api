@@ -1,5 +1,5 @@
 # ==========================================
-# 2. ULTIMATE PINTEREST SEARCH (No 3rd Party API, No Limits)
+# 2. ULTIMATE PINTEREST SEARCH (Internal AJAX API Bypass)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -8,52 +8,56 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # 🚀 Vercel API hata diya hai, ab seedha Pinterest se data nikalenge
-        url = f"https://in.pinterest.com/search/pins/?q={query}"
+        import urllib.parse
+        import json
+        
+        # Pinterest ka hidden backend server jo direct data bhejta hai
+        options = {"query": query, "scope": "pins", "bookmarks": [""], "page_size": 25}
+        data_param = {"options": options, "context": {}}
+        encoded_data = urllib.parse.quote(json.dumps(data_param))
+        
+        url = f"https://www.pinterest.com/resource/BaseSearchResource/get/?source_url=/search/pins/?q={query}&data={encoded_data}"
+        
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest"
         }
         
         res = requests.get(url, headers=headers, timeout=10)
+        res_data = res.json()
         
-        # Pinterest ke hidden JSON data ko HTML se extract karna
-        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', res.text)
-        
-        if not match:
-            return jsonify({"status": False, "error": "Pinterest data block or layout changed."})
-            
-        import json # Failsafe
-        data = json.loads(match.group(1))
-        pins_dict = data.get("props", {}).get("initialReduxState", {}).get("pins", {})
+        # Data me se list nikalna
+        results = res_data.get("resource_response", {}).get("data", {}).get("results", [])
         
         final_results = []
         
-        for pin_id, pin_data in pins_dict.items():
-            if len(final_results) >= 15: # 🔥 Yahan humne limit 15 set ki hai!
+        for item in results:
+            if len(final_results) >= 15: # 🔥 Limit 15 kar di gayi hai (Bot 10 dikhayega)
                 break
                 
-            # Original (High Quality) Image URL nikalna
-            images = pin_data.get("images", {})
+            images = item.get("images", {})
             media_url = images.get("orig", {}).get("url")
             
+            # Agar image URL nahi mila toh chhod do
             if not media_url:
                 continue
                 
-            title = pin_data.get("title", "")
+            title = item.get("title", "")
             if not title:
-                title = pin_data.get("grid_title", "Pinterest Search")
+                title = item.get("grid_title", "Pinterest Search")
                 
+            pin_id = item.get("id")
             pin_url = f"https://www.pinterest.com/pin/{pin_id}/"
             
             final_results.append({
-                "type": "image", # Fast search ke liye images support
+                "type": "image", 
                 "media_url": media_url,
                 "title": title,
                 "pin_url": pin_url
             })
             
-        if final_results:
+        if len(final_results) > 0:
             return jsonify({"status": True, "results": final_results})
         else:
             return jsonify({"status": False, "error": "No results found for this keyword."})
