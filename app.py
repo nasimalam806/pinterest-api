@@ -31,7 +31,7 @@ def search_pins():
                 
                 try:
                     # Deep scraping for each pin
-                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=25)
+                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=120)
                     html_content = pin_html_res.text.replace("\\/", "/")
                     
                     video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
