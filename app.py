@@ -15,29 +15,26 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # Vercel API se top 25 results mangwana
         api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=25&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
             final_results = []
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
             
-            # Loop chalana 25 results ke liye
             for item in response["items"][:25]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
                 try:
-                    # Deep scraping for each pin
                     pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=5)
                     html_content = pin_html_res.text.replace("\\/", "/")
                     
                     video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
                     media_type = "image"
-                    media_url = item.get("image", "") # Default low-res image
+                    media_url = item.get("image", "") 
                     
                     if video_matches:
                         media_type = "video"
@@ -47,13 +44,11 @@ def search_pins():
                                 media_url = v
                                 break
                     else:
-                        # Find high-res image
                         og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
                                    re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
                         if og_match:
                             media_url = og_match.group(1).strip().replace("/736x/", "/originals/").replace("/564x/", "/originals/").split('?')[0]
                             
-                    # List me add karna
                     final_results.append({
                         "type": media_type,
                         "media_url": media_url,
@@ -61,7 +56,7 @@ def search_pins():
                         "pin_url": pin_url
                     })
                 except Exception:
-                    pass # Agar koi ek fail ho jaye toh aage badho
+                    pass 
             
             if final_results:
                 return jsonify({"status": True, "results": final_results})
@@ -85,7 +80,7 @@ def fetch_pin():
         
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         res = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
         html_content = res.text.replace("\\/", "/")
@@ -95,17 +90,14 @@ def fetch_pin():
         title = "Pinterest Download"
         description = ""
         
-        # Title nikalna
         title_match = re.search(r'<meta property="og:title" content="(.*?)"', html_content)
         if title_match: 
             title = title_match.group(1)
             
-        # Description nikalna
         desc_match = re.search(r'<meta property="og:description" content="(.*?)"', html_content)
         if desc_match: 
             description = desc_match.group(1)
             
-        # Video nikalna
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         if video_matches:
             media_type = "video"
@@ -115,7 +107,6 @@ def fetch_pin():
                     media_url = v
                     break
         else:
-            # HD Image nikalna
             og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
                        re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
             if og_match:
@@ -137,11 +128,11 @@ def fetch_pin():
 
 
 # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Fetch User Info)
+# 3. PINTEREST PROFILE ENDPOINT (Smarter Extraction)
 # ==========================================
-@app.route('/profile_api') # YAHAN CHANGE KIYA HAI (/profile se /profile_api kar diya)
+@app.route('/profile_api')
 def fetch_profile():
-    username = request.args.get('user') # YAHAN BHI CHANGE KIYA HAI ('username' se 'user' kar diya)
+    username = request.args.get('user')
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
         
@@ -153,38 +144,43 @@ def fetch_profile():
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         res = requests.get(url, headers=headers, timeout=10)
+        html = res.text
         
-        # Profile Picture
-        pic_match = re.search(r'<meta property="og:image" name="og:image" content="(.*?)"', res.text)
-        pic_url = pic_match.group(1).replace("280x280", "originals") if pic_match else ""
+        # Profile Picture (Fixed Regex)
+        pic_match = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
+        pic_url = pic_match.group(1).replace("280x280", "originals").replace("736x", "originals") if pic_match else ""
         
-        # Name
-        name_match = re.search(r'<meta property="og:title" name="og:title" content="(.*?)"', res.text)
-        name = name_match.group(1) if name_match else username
+        # Name (Fixed Regex - Cleaning ' | Pinterest' from name)
+        name_match = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
+        name = username
+        if name_match:
+            raw_name = name_match.group(1)
+            name = raw_name.split(' (')[0].split(' |')[0] 
         
-        # Followers & Following Data
-        followers = "N/A"
-        following = "N/A"
-        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', res.text)
+        # Smart Data Extraction (Directly from HTML to avoid JSON path errors)
+        followers = "0"
+        following = "0"
+        total_pins = "0"
         
-        if match:
-            try:
-                data = json.loads(match.group(1))
-                user_data = data.get("props", {}).get("initialReduxState", {}).get("users", {})
-                for key, val in user_data.items():
-                    if isinstance(val, dict) and val.get("username") == username:
-                        followers = val.get("follower_count", "N/A")
-                        following = val.get("following_count", "N/A")
-                        break
-            except Exception:
-                pass
+        follower_match = re.search(r'"follower_count":\s*(\d+)', html) or re.search(r'"followerCount":\s*(\d+)', html)
+        if follower_match:
+            followers = follower_match.group(1)
+            
+        following_match = re.search(r'"following_count":\s*(\d+)', html) or re.search(r'"followingCount":\s*(\d+)', html)
+        if following_match:
+            following = following_match.group(1)
+            
+        pins_match = re.search(r'"pin_count":\s*(\d+)', html) or re.search(r'"pinCount":\s*(\d+)', html)
+        if pins_match:
+            total_pins = pins_match.group(1)
         
         return jsonify({
             "status": True,
             "username": username,
-            "name": name,
+            "name": name.strip(),
             "followers": followers,
             "following": following,
+            "total_pins": total_pins,  # Yahan Total Pins add kar diya gaya hai!
             "pic_url": pic_url,
             "profile_url": url
         })
