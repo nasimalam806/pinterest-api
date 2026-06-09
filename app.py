@@ -5,7 +5,7 @@ import re
 app = Flask(__name__)
 
 # ==========================================
-# ORIGINAL PINTEREST SEARCH ENDPOINT (5 Results with Video Support)
+# ORIGINAL PINTEREST SEARCH ENDPOINT (10 Results with Video Support)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -14,8 +14,8 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # Vercel API se top 5 results mangwana
-        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=5&compact=true"
+        # Vercel API se top 10 results mangwana
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=10&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
@@ -24,8 +24,8 @@ def search_pins():
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
             }
             
-            # Loop chalana 5 results ke liye
-            for item in response["items"][:5]:
+            # Loop chalana 10 results ke liye
+            for item in response["items"][:10]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
@@ -74,4 +74,3 @@ def search_pins():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-    
