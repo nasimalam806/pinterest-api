@@ -139,9 +139,9 @@ def fetch_pin():
 # ==========================================
 # 3. PINTEREST PROFILE ENDPOINT (Fetch User Info)
 # ==========================================
-@app.route('/profile')
+@app.route('/profile_api') # YAHAN CHANGE KIYA HAI (/profile se /profile_api kar diya)
 def fetch_profile():
-    username = request.args.get('username')
+    username = request.args.get('user') # YAHAN BHI CHANGE KIYA HAI ('username' se 'user' kar diya)
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
         
