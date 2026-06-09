@@ -15,7 +15,7 @@ def search_pins():
     
     try:
         # Vercel API se top 10 results mangwana
-        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=10&compact=true"
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=15&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
@@ -25,7 +25,7 @@ def search_pins():
             }
             
             # Loop chalana 10 results ke liye
-            for item in response["items"][:10]:
+            for item in response["items"][:15]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
