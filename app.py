@@ -25,7 +25,7 @@ def search_pins():
             }
             
             # Loop chalana 10 results ke liye
-            for item in response["items"][:15]:
+            for item in response["items"][:25]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
