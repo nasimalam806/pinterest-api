@@ -15,7 +15,7 @@ def search_pins():
     
     try:
         # Vercel API se top 10 results mangwana
-        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=15&compact=true"
+        api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=25&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
@@ -31,7 +31,7 @@ def search_pins():
                 
                 try:
                     # Deep scraping for each pin
-                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=5)
+                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=25)
                     html_content = pin_html_res.text.replace("\\/", "/")
                     
                     video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
