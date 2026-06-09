@@ -5,7 +5,7 @@ import re
 app = Flask(__name__)
 
 # ==========================================
-# ORIGINAL PINTEREST SEARCH ENDPOINT (10 Results with Video Support)
+# ORIGINAL PINTEREST SEARCH ENDPOINT (25 Results with Video Support)
 # ==========================================
 @app.route('/search_api')
 def search_pins():
@@ -14,7 +14,7 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
-        # Vercel API se top 10 results mangwana
+        # Vercel API se top 25 results mangwana
         api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=25&compact=true"
         response = requests.get(api_url).json()
         
@@ -24,14 +24,14 @@ def search_pins():
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
             }
             
-            # Loop chalana 10 results ke liye
+            # Loop chalana 25 results ke liye
             for item in response["items"][:25]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
                 try:
                     # Deep scraping for each pin
-                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=120)
+                    pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=5)
                     html_content = pin_html_res.text.replace("\\/", "/")
                     
                     video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
