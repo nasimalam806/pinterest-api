@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 import requests
 import re
 import json
-import urllib.parse
 
 app = Flask(__name__)
 
@@ -129,7 +128,7 @@ def fetch_pin():
 
 
 # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Internal AJAX Bypass)
+# 3. PINTEREST PROFILE ENDPOINT (Bulletproof Hybrid Fix)
 # ==========================================
 @app.route('/profile_api')
 def fetch_profile():
@@ -138,57 +137,86 @@ def fetch_profile():
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
         
     username = username.replace("@", "").strip()
+    url = f"https://in.pinterest.com/{username}/"
     
     try:
-        # Pinterest ka internal backend server jo sirf JSON data bhejta hai
-        options = {"username": username}
-        data_param = {"options": options, "context": {}}
-        encoded_data = urllib.parse.quote(json.dumps(data_param))
-        
-        # Hidden API URL
-        url = f"https://www.pinterest.com/resource/UserResource/get/?source_url=/{username}/&data={encoded_data}"
-        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "X-Requested-With": "XMLHttpRequest"
+            "Accept-Language": "en-US,en;q=0.9"
         }
-        
         res = requests.get(url, headers=headers, timeout=10)
-        res_data = res.json()
         
-        user_data = res_data.get("resource_response", {}).get("data", {})
-        
-        if not user_data:
-            return jsonify({"status": False, "error": "User not found or data blocked."})
+        if res.status_code == 404:
+            return jsonify({"status": False, "error": "Ye user Pinterest par exist nahi karta!"})
             
-        # Extract Exact & Accurate Stats directly from Database Payload
-        name = user_data.get("full_name", username)
-        bio = user_data.get("about", "")
-        followers = str(user_data.get("follower_count", "0"))
-        following = str(user_data.get("following_count", "0"))
-        total_pins = str(user_data.get("pin_count", "0"))
+        html = res.text
         
-        # Extract Image (High Quality guaranteed)
-        pic_url = user_data.get("image_xlarge_url", "")
-        if pic_url:
-            pic_url = pic_url.replace("280x280", "originals").replace("736x", "originals")
+        # --- SAFE METHOD: Extract from Hidden JSON ---
+        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', html)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                users_dict = data.get("props", {}).get("initialReduxState", {}).get("users", {})
+                
+                for key, val in users_dict.items():
+                    if isinstance(val, dict) and val.get("username", "").lower() == username.lower():
+                        # Perfect user mil gaya!
+                        pic = val.get("image_xlarge_url", "")
+                        if pic: 
+                            pic = pic.replace("280x280", "originals").replace("736x", "originals")
+                            
+                        return jsonify({
+                            "status": True,
+                            "username": val.get("username", username),
+                            "name": val.get("full_name", username),
+                            "bio": val.get("about", ""),
+                            "followers": str(val.get("follower_count", "0")),
+                            "following": str(val.get("following_count", "0")),
+                            "total_pins": str(val.get("pin_count", "0")),
+                            "pic_url": pic,
+                            "profile_url": url
+                        })
+            except Exception:
+                pass # Agar JSON fail hua toh neeche Regex se data nikalenge
+                
+        # --- FALLBACK METHOD: Regex Extract (Agar JSON block nahi mila) ---
+        name = username
+        name_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+        if name_match: name = name_match.group(1).split(' (')[0].split(' |')[0]
+        
+        pic_url = ""
+        pic_match = re.search(r'<meta property="og:image" content="([^"]+)"', html)
+        if pic_match: pic_url = pic_match.group(1).replace("280x280", "originals")
+        
+        followers = "0"
+        f_match = re.search(r'"follower_count":(\d+)', html)
+        if f_match: followers = f_match.group(1)
+        
+        following = "0"
+        fw_match = re.search(r'"following_count":(\d+)', html)
+        if fw_match: following = fw_match.group(1)
+        
+        pins = "0"
+        p_match = re.search(r'"pin_count":(\d+)', html)
+        if p_match: pins = p_match.group(1)
+        
+        if followers == "0" and following == "0" and not pic_url:
+            return jsonify({"status": False, "error": "Pinterest ne profile load hone se block kar diya. Thodi der baad try karein."})
             
         return jsonify({
             "status": True,
             "username": username,
-            "name": name.strip(),
-            "bio": bio,
+            "name": name,
+            "bio": "", 
             "followers": followers,
             "following": following,
-            "total_pins": total_pins,
+            "total_pins": pins,
             "pic_url": pic_url,
-            "profile_url": f"https://www.pinterest.com/{username}/"
+            "profile_url": url
         })
         
     except Exception as e:
-        return jsonify({"status": False, "error": str(e)}), 500
-
+        return jsonify({"status": False, "error": f"Internal Error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
