@@ -125,10 +125,8 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-
-
 # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Smarter Extraction)
+# 3. PINTEREST PROFILE ENDPOINT (Fixed & Smarter)
 # ==========================================
 @app.route('/profile_api')
 def fetch_profile():
@@ -146,41 +144,58 @@ def fetch_profile():
         res = requests.get(url, headers=headers, timeout=10)
         html = res.text
         
-        # Profile Picture (Fixed Regex)
+        # Profile Picture
         pic_match = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
         pic_url = pic_match.group(1).replace("280x280", "originals").replace("736x", "originals") if pic_match else ""
         
-        # Name (Fixed Regex - Cleaning ' | Pinterest' from name)
+        # Name (Fixed Fallback so it never shows 'None')
         name_match = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
         name = username
         if name_match:
             raw_name = name_match.group(1)
-            name = raw_name.split(' (')[0].split(' |')[0] 
+            # Safely cleaning extra Pinterest text
+            name = raw_name.split(' - ')[0].split(' |')[0].split(' (')[0].strip()
+            
+        # Bio / Description (Yeh missing tha!)
+        bio = ""
+        bio_match = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]+)"', html)
+        if bio_match:
+            # HTML entities fix karne ke liye aur content clean karne ke liye
+            bio = bio_match.group(1).replace('&quot;', '"').replace('&#39;', "'").strip()
+            if bio == "See what " + name + " (" + username + ") has discovered on Pinterest, the world's biggest collection of ideas.":
+                bio = "" # Agar default Pinterest bio ho to khali chhod do
         
-        # Smart Data Extraction (Directly from HTML to avoid JSON path errors)
+        # Agar bio og:description se nahi mila, to JSON se nikalne ki koshish karo
+        if not bio:
+            about_match = re.search(r'"about":"(.*?)"', html)
+            if about_match:
+                bio = about_match.group(1).replace('\\u0026', '&').replace('\\"', '"').replace('\\n', ' ').strip()
+
+        # Smart Data Extraction (Prioritizing correct JSON keys)
         followers = "0"
         following = "0"
         total_pins = "0"
         
-        follower_match = re.search(r'"follower_count":\s*(\d+)', html) or re.search(r'"followerCount":\s*(\d+)', html)
+        follower_match = re.search(r'"followerCount":\s*(\d+)', html)
         if follower_match:
             followers = follower_match.group(1)
             
-        following_match = re.search(r'"following_count":\s*(\d+)', html) or re.search(r'"followingCount":\s*(\d+)', html)
+        following_match = re.search(r'"followingCount":\s*(\d+)', html)
         if following_match:
             following = following_match.group(1)
             
-        pins_match = re.search(r'"pin_count":\s*(\d+)', html) or re.search(r'"pinCount":\s*(\d+)', html)
+        pins_match = re.search(r'"pinCount":\s*(\d+)', html)
         if pins_match:
             total_pins = pins_match.group(1)
         
         return jsonify({
             "status": True,
             "username": username,
-            "name": name.strip(),
+            "name": name if name else username, # Fallback to username
+            "bio": bio, # Added to payload
             "followers": followers,
             "following": following,
-            "total_pins": total_pins,  # Yahan Total Pins add kar diya gaya hai!
+            "total_pins": total_pins,
             "pic_url": pic_url,
             "profile_url": url
         })
