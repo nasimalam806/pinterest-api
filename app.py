@@ -126,9 +126,8 @@ def fetch_pin():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
-
 # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Bulletproof Hybrid Fix)
+# 3. PINTEREST PROFILE ENDPOINT (Ultimate Image Fix)
 # ==========================================
 @app.route('/profile_api')
 def fetch_profile():
@@ -136,87 +135,68 @@ def fetch_profile():
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
         
-    username = username.replace("@", "").strip()
-    url = f"https://in.pinterest.com/{username}/"
+    username = username.replace("@", "")
+    url = f"https://www.pinterest.com/{username}/"
     
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "en-US,en;q=0.9"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         res = requests.get(url, headers=headers, timeout=10)
-        
-        if res.status_code == 404:
-            return jsonify({"status": False, "error": "Ye user Pinterest par exist nahi karta!"})
-            
         html = res.text
         
-        # --- SAFE METHOD: Extract from Hidden JSON ---
-        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', html)
-        if match:
-            try:
-                data = json.loads(match.group(1))
-                users_dict = data.get("props", {}).get("initialReduxState", {}).get("users", {})
-                
-                for key, val in users_dict.items():
-                    if isinstance(val, dict) and val.get("username", "").lower() == username.lower():
-                        # Perfect user mil gaya!
-                        pic = val.get("image_xlarge_url", "")
-                        if pic: 
-                            pic = pic.replace("280x280", "originals").replace("736x", "originals")
-                            
-                        return jsonify({
-                            "status": True,
-                            "username": val.get("username", username),
-                            "name": val.get("full_name", username),
-                            "bio": val.get("about", ""),
-                            "followers": str(val.get("follower_count", "0")),
-                            "following": str(val.get("following_count", "0")),
-                            "total_pins": str(val.get("pin_count", "0")),
-                            "pic_url": pic,
-                            "profile_url": url
-                        })
-            except Exception:
-                pass # Agar JSON fail hua toh neeche Regex se data nikalenge
-                
-        # --- FALLBACK METHOD: Regex Extract (Agar JSON block nahi mila) ---
-        name = username
-        name_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
-        if name_match: name = name_match.group(1).split(' (')[0].split(' |')[0]
-        
+        # 🔥 PROFILE PIC EXTRACTION (100% FIXED) 🔥
         pic_url = ""
-        pic_match = re.search(r'<meta property="og:image" content="([^"]+)"', html)
-        if pic_match: pic_url = pic_match.group(1).replace("280x280", "originals")
-        
-        followers = "0"
-        f_match = re.search(r'"follower_count":(\d+)', html)
-        if f_match: followers = f_match.group(1)
-        
-        following = "0"
-        fw_match = re.search(r'"following_count":(\d+)', html)
-        if fw_match: following = fw_match.group(1)
-        
-        pins = "0"
-        p_match = re.search(r'"pin_count":(\d+)', html)
-        if p_match: pins = p_match.group(1)
-        
-        if followers == "0" and following == "0" and not pic_url:
-            return jsonify({"status": False, "error": "Pinterest ne profile load hone se block kar diya. Thodi der baad try karein."})
+        # Pehle HD image try karenge
+        pic_match = re.search(r'"image_xlarge_url"\s*:\s*"([^"]+)"', html)
+        if not pic_match:
+            # Agar nahi mili toh normal image tag se nikalenge
+            pic_match = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
             
+        if pic_match:
+            raw_url = pic_match.group(1)
+            # URL CLEANER: Pinterest ke kachre (\/) ko saaf karna
+            clean_url = raw_url.replace("\\/", "/").replace("\\u0026", "&")
+            pic_url = clean_url.replace("280x280", "originals").replace("736x", "originals")
+        
+        # Name
+        name_match = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
+        name = username
+        if name_match:
+            raw_name = name_match.group(1)
+            name = raw_name.split(' (')[0].split(' |')[0] 
+        
+        # Smart Data Extraction
+        followers = "0"
+        following = "0"
+        total_pins = "0"
+        
+        follower_match = re.search(r'"follower_count":\s*(\d+)', html) or re.search(r'"followerCount":\s*(\d+)', html)
+        if follower_match:
+            followers = follower_match.group(1)
+            
+        following_match = re.search(r'"following_count":\s*(\d+)', html) or re.search(r'"followingCount":\s*(\d+)', html)
+        if following_match:
+            following = following_match.group(1)
+            
+        pins_match = re.search(r'"pin_count":\s*(\d+)', html) or re.search(r'"pinCount":\s*(\d+)', html)
+        if pins_match:
+            total_pins = pins_match.group(1)
+        
         return jsonify({
             "status": True,
             "username": username,
-            "name": name,
-            "bio": "", 
+            "name": name.strip(),
             "followers": followers,
             "following": following,
-            "total_pins": pins,
+            "total_pins": total_pins,
             "pic_url": pic_url,
             "profile_url": url
         })
         
     except Exception as e:
-        return jsonify({"status": False, "error": f"Internal Error: {str(e)}"}), 500
+        return jsonify({"status": False, "error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
