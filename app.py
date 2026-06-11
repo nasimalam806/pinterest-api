@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import re
 import json
+import urllib.parse
 
 app = Flask(__name__)
 
@@ -125,8 +126,10 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-        # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Ultimate Image Fix)
+
+
+# ==========================================
+# 3. PINTEREST PROFILE ENDPOINT (Internal AJAX Bypass)
 # ==========================================
 @app.route('/profile_api')
 def fetch_profile():
@@ -134,69 +137,57 @@ def fetch_profile():
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
         
-    username = username.replace("@", "")
-    url = f"https://www.pinterest.com/{username}/"
+    username = username.replace("@", "").strip()
     
     try:
+        # Pinterest ka internal backend server jo sirf JSON data bhejta hai
+        options = {"username": username}
+        data_param = {"options": options, "context": {}}
+        encoded_data = urllib.parse.quote(json.dumps(data_param))
+        
+        # Hidden API URL
+        url = f"https://www.pinterest.com/resource/UserResource/get/?source_url=/{username}/&data={encoded_data}"
+        
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest"
         }
+        
         res = requests.get(url, headers=headers, timeout=10)
-        html = res.text
+        res_data = res.json()
         
-        # 🔥 PROFILE PIC EXTRACTION (100% FIXED) 🔥
-        pic_url = ""
-        # Pehle HD image try karenge
-        pic_match = re.search(r'"image_xlarge_url"\s*:\s*"([^"]+)"', html)
-        if not pic_match:
-            # Agar nahi mili toh normal image tag se nikalenge
-            pic_match = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
+        user_data = res_data.get("resource_response", {}).get("data", {})
+        
+        if not user_data:
+            return jsonify({"status": False, "error": "User not found or data blocked."})
             
-        if pic_match:
-            raw_url = pic_match.group(1)
-            # URL CLEANER: Pinterest ke kachre (\/) ko saaf karna
-            clean_url = raw_url.replace("\\/", "/").replace("\\u0026", "&")
-            pic_url = clean_url.replace("280x280", "originals").replace("736x", "originals")
+        # Extract Exact & Accurate Stats directly from Database Payload
+        name = user_data.get("full_name", username)
+        bio = user_data.get("about", "")
+        followers = str(user_data.get("follower_count", "0"))
+        following = str(user_data.get("following_count", "0"))
+        total_pins = str(user_data.get("pin_count", "0"))
         
-        # Name
-        name_match = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
-        name = username
-        if name_match:
-            raw_name = name_match.group(1)
-            name = raw_name.split(' (')[0].split(' |')[0] 
-        
-        # Smart Data Extraction
-        followers = "0"
-        following = "0"
-        total_pins = "0"
-        
-        follower_match = re.search(r'"follower_count":\s*(\d+)', html) or re.search(r'"followerCount":\s*(\d+)', html)
-        if follower_match:
-            followers = follower_match.group(1)
+        # Extract Image (High Quality guaranteed)
+        pic_url = user_data.get("image_xlarge_url", "")
+        if pic_url:
+            pic_url = pic_url.replace("280x280", "originals").replace("736x", "originals")
             
-        following_match = re.search(r'"following_count":\s*(\d+)', html) or re.search(r'"followingCount":\s*(\d+)', html)
-        if following_match:
-            following = following_match.group(1)
-            
-        pins_match = re.search(r'"pin_count":\s*(\d+)', html) or re.search(r'"pinCount":\s*(\d+)', html)
-        if pins_match:
-            total_pins = pins_match.group(1)
-        
         return jsonify({
             "status": True,
             "username": username,
             "name": name.strip(),
+            "bio": bio,
             "followers": followers,
             "following": following,
             "total_pins": total_pins,
             "pic_url": pic_url,
-            "profile_url": url
+            "profile_url": f"https://www.pinterest.com/{username}/"
         })
         
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-
-
 
 
 if __name__ == '__main__':
