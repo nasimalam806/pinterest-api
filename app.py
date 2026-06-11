@@ -172,6 +172,15 @@ def fetch_profile():
                 bio = about_match.group(1).replace('\\u0026', '&').replace('\\"', '"').replace('\\n', ' ').strip()
 
         # --- PROFILE PIC ---
+                # --- PROFILE PIC ---
+        pic_url = ""
+        pic_match = re.search(r'"image_xlarge_url"\s*:\s*"([^"]+)"', html)
+        if not pic_match:
+            pic_match = re.search(r'<meta[^>]*og:image[^>]*content=["\']([^"\']+)["\']', html)
+            
+        if pic_match:
+            pic_url = pic_match.group(1).replace("280x280", "originals").replace("736x", "originals")
+            
         pic_url = ""
         pic_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
         if pic_match:
