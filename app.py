@@ -15,26 +15,29 @@ def search_pins():
         return jsonify({"status": False, "error": "Query parameter is missing."}), 400
     
     try:
+        # Vercel API se top 25 results mangwana
         api_url = f"https://pinterest-api-bay.vercel.app/search/pins?q={query}&count=25&compact=true"
         response = requests.get(api_url).json()
         
         if "items" in response and len(response["items"]) > 0:
             final_results = []
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
             }
             
+            # Loop chalana 25 results ke liye
             for item in response["items"][:25]:
                 pin_url = item.get("url")
                 title = item.get("title", "Pinterest Search")
                 
                 try:
+                    # Deep scraping for each pin
                     pin_html_res = requests.get(pin_url, headers=headers, allow_redirects=True, timeout=5)
                     html_content = pin_html_res.text.replace("\\/", "/")
                     
                     video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
                     media_type = "image"
-                    media_url = item.get("image", "") 
+                    media_url = item.get("image", "") # Default low-res image
                     
                     if video_matches:
                         media_type = "video"
@@ -44,11 +47,13 @@ def search_pins():
                                 media_url = v
                                 break
                     else:
+                        # Find high-res image
                         og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
                                    re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
                         if og_match:
                             media_url = og_match.group(1).strip().replace("/736x/", "/originals/").replace("/564x/", "/originals/").split('?')[0]
                             
+                    # List me add karna
                     final_results.append({
                         "type": media_type,
                         "media_url": media_url,
@@ -56,7 +61,7 @@ def search_pins():
                         "pin_url": pin_url
                     })
                 except Exception:
-                    pass 
+                    pass # Agar koi ek fail ho jaye toh aage badho
             
             if final_results:
                 return jsonify({"status": True, "results": final_results})
@@ -80,7 +85,7 @@ def fetch_pin():
         
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
         }
         res = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
         html_content = res.text.replace("\\/", "/")
@@ -90,14 +95,17 @@ def fetch_pin():
         title = "Pinterest Download"
         description = ""
         
+        # Title nikalna
         title_match = re.search(r'<meta property="og:title" content="(.*?)"', html_content)
         if title_match: 
             title = title_match.group(1)
             
+        # Description nikalna
         desc_match = re.search(r'<meta property="og:description" content="(.*?)"', html_content)
         if desc_match: 
             description = desc_match.group(1)
             
+        # Video nikalna
         video_matches = re.findall(r'(https://[^"\'\s]+\.mp4)', html_content)
         if video_matches:
             media_type = "video"
@@ -107,6 +115,7 @@ def fetch_pin():
                     media_url = v
                     break
         else:
+            # HD Image nikalna
             og_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html_content) or \
                        re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html_content)
             if og_match:
@@ -125,32 +134,59 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
+
+
 # ==========================================
-# 3. NEW: USER PROFILE ENDPOINT
+# 3. PINTEREST PROFILE ENDPOINT (Fetch User Info)
 # ==========================================
-@app.route('/profile_api')
+@app.route('/profile_api') # YAHAN CHANGE KIYA HAI (/profile se /profile_api kar diya)
 def fetch_profile():
-    username = request.args.get('user')
+    username = request.args.get('user') # YAHAN BHI CHANGE KIYA HAI ('username' se 'user' kar diya)
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
+        
+    username = username.replace("@", "")
+    url = f"https://www.pinterest.com/{username}/"
     
     try:
-        # Hitting the Vercel API for User Profile Details
-        api_url = f"https://pinterest-api-bay.vercel.app/user/{username}"
-        response = requests.get(api_url).json()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=10)
         
-        # Check if the Vercel API returned an error
-        if response.get("status") == "failure":
-            return jsonify({"status": False, "error": response.get("message", "User not found.")})
-            
+        # Profile Picture
+        pic_match = re.search(r'<meta property="og:image" name="og:image" content="(.*?)"', res.text)
+        pic_url = pic_match.group(1).replace("280x280", "originals") if pic_match else ""
+        
+        # Name
+        name_match = re.search(r'<meta property="og:title" name="og:title" content="(.*?)"', res.text)
+        name = name_match.group(1) if name_match else username
+        
+        # Followers & Following Data
+        followers = "N/A"
+        following = "N/A"
+        match = re.search(r'<script id="__PWS_DATA__" type="application/json">(.*?)</script>', res.text)
+        
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                user_data = data.get("props", {}).get("initialReduxState", {}).get("users", {})
+                for key, val in user_data.items():
+                    if isinstance(val, dict) and val.get("username") == username:
+                        followers = val.get("follower_count", "N/A")
+                        following = val.get("following_count", "N/A")
+                        break
+            except Exception:
+                pass
+        
         return jsonify({
             "status": True,
-            "full_name": response.get("full_name", "No Name"),
-            "about": response.get("about", "No bio provided."),
-            "followers": response.get("followers", 0),
-            "following": response.get("following", 0),
-            "total_pins": response.get("pins", 0),
-            "profile_image": response.get("profile_image", "")
+            "username": username,
+            "name": name,
+            "followers": followers,
+            "following": following,
+            "pic_url": pic_url,
+            "profile_url": url
         })
         
     except Exception as e:
@@ -159,5 +195,3 @@ def fetch_profile():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
-
