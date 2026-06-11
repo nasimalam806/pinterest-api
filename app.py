@@ -134,6 +134,7 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
+
 # ==========================================
 # 3. PINTEREST PROFILE ENDPOINT (Ultimate Fix)
 # ==========================================
@@ -185,7 +186,9 @@ def fetch_profile():
         pic_url = ""
         pic_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
         if pic_match:
-            pic_url = pic_match.group(1).replace("280x280", "originals").replace("736x", "originals")
+            # 🔥 YAHAN CHANGE KIYA HAI: URL Cleaner add kar diya gaya hai 🔥
+            raw_pic = pic_match.group(1)
+            pic_url = raw_pic.replace("\\/", "/").replace("&amp;", "&").replace("280x280", "originals").replace("736x", "originals")
 
         # --- STATS (Followers, Following, Pins) ---
         followers = "0"
