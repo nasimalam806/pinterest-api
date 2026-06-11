@@ -125,79 +125,39 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-        # ==========================================
-# 3. PINTEREST PROFILE ENDPOINT (Ultimate Image Fix)
+# ==========================================
+# 3. NEW: USER PROFILE ENDPOINT
 # ==========================================
 @app.route('/profile_api')
 def fetch_profile():
     username = request.args.get('user')
     if not username:
         return jsonify({"status": False, "error": "Username parameter is missing."}), 400
-        
-    username = username.replace("@", "")
-    url = f"https://www.pinterest.com/{username}/"
     
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        res = requests.get(url, headers=headers, timeout=10)
-        html = res.text
+        # Hitting the Vercel API for User Profile Details
+        api_url = f"https://pinterest-api-bay.vercel.app/user/{username}"
+        response = requests.get(api_url).json()
         
-        # 🔥 PROFILE PIC EXTRACTION (100% FIXED) 🔥
-        pic_url = ""
-        # Pehle HD image try karenge
-        pic_match = re.search(r'"image_xlarge_url"\s*:\s*"([^"]+)"', html)
-        if not pic_match:
-            # Agar nahi mili toh normal image tag se nikalenge
-            pic_match = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
+        # Check if the Vercel API returned an error
+        if response.get("status") == "failure":
+            return jsonify({"status": False, "error": response.get("message", "User not found.")})
             
-        if pic_match:
-            raw_url = pic_match.group(1)
-            # URL CLEANER: Pinterest ke kachre (\/) ko saaf karna
-            clean_url = raw_url.replace("\\/", "/").replace("\\u0026", "&")
-            pic_url = clean_url.replace("280x280", "originals").replace("736x", "originals")
-        
-        # Name
-        name_match = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
-        name = username
-        if name_match:
-            raw_name = name_match.group(1)
-            name = raw_name.split(' (')[0].split(' |')[0] 
-        
-        # Smart Data Extraction
-        followers = "0"
-        following = "0"
-        total_pins = "0"
-        
-        follower_match = re.search(r'"follower_count":\s*(\d+)', html) or re.search(r'"followerCount":\s*(\d+)', html)
-        if follower_match:
-            followers = follower_match.group(1)
-            
-        following_match = re.search(r'"following_count":\s*(\d+)', html) or re.search(r'"followingCount":\s*(\d+)', html)
-        if following_match:
-            following = following_match.group(1)
-            
-        pins_match = re.search(r'"pin_count":\s*(\d+)', html) or re.search(r'"pinCount":\s*(\d+)', html)
-        if pins_match:
-            total_pins = pins_match.group(1)
-        
         return jsonify({
             "status": True,
-            "username": username,
-            "name": name.strip(),
-            "followers": followers,
-            "following": following,
-            "total_pins": total_pins,
-            "pic_url": pic_url,
-            "profile_url": url
+            "full_name": response.get("full_name", "No Name"),
+            "about": response.get("about", "No bio provided."),
+            "followers": response.get("followers", 0),
+            "following": response.get("following", 0),
+            "total_pins": response.get("pins", 0),
+            "profile_image": response.get("profile_image", "")
         })
         
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
 
-
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
+
