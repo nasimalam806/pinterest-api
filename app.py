@@ -208,7 +208,7 @@ def fetch_profile():
         return jsonify({"status": False, "error": str(e)}), 500
 
 # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Fresh Servers + High Timeout)
+# 4. INSTAGRAM FETCH ENDPOINT (Fresh APIs + Universal Parser)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -217,72 +217,79 @@ def fetch_insta():
         return jsonify({"status": False, "error": "URL parameter is missing."}), 400
     
     try:
-        # Naye aur active Cobalt servers ki list
-        cobalt_servers = [
-            {"api": "https://api.cobalt.tools/", "origin": "https://cobalt.tools"},
-            {"api": "https://api.onlyme.life/", "origin": "https://onlyme.life"},
-            {"api": "https://cobalt.kwiatekmateusz.pl/", "origin": "https://cobalt.kwiatekmateusz.pl"},
-            {"api": "https://api.ziy.red/", "origin": "https://ziy.red"}
+        # Nayi, active aur unblocked APIs
+        apis_to_try = [
+            f"https://api.siputzx.my.id/api/d/igdl?url={url}",
+            f"https://api.vyturex.com/ig?url={url}",
+            f"https://api.nyxs.pw/dl/ig?url={url}"
         ]
         
-        payload = {"url": url}
-        res = None
-        last_error = "Sabhi servers down hain ya timeout ho gaye."
+        media_urls = []
         
-        for server in cobalt_servers:
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Origin": server["origin"],
-                "Referer": server["origin"] + "/",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-            }
-            
+        for api_url in apis_to_try:
             try:
-                # Timeout badha kar 25 seconds kar diya hai kyunki badi reels/carousel me time lagta hai
-                res = requests.post(server["api"], json=payload, headers=headers, timeout=25)
+                # Har API ko connect hone ke liye 15 seconds denge
+                res = requests.get(api_url, timeout=15)
                 if res.status_code == 200:
-                    break # Success! Loop se bahar niklo
-                else:
-                    last_error = f"Server {server['api']} Error {res.status_code}: {res.text[:100]}"
-            except Exception as e:
-                last_error = f"Server {server['api']} timeout ya connect nahi hua."
-                continue
-                
-        # Agar saare servers fail ho gaye
-        if not res or res.status_code != 200:
-            return jsonify({"status": False, "error": f"Bhai download fail ho gaya. Detail: {last_error}"})
-            
-        data = res.json()
+                    data = res.json()
+                    
+                    # 🚀 UNIVERSAL PARSER: Ye har tarah ki API ko automatically handle kar lega
+                    for key in ["data", "result", "url", "media", "BK9"]:
+                        if key in data:
+                            val = data[key]
+                            
+                            # Agar multiple videos/images hain (List)
+                            if isinstance(val, list):
+                                for item in val:
+                                    if isinstance(item, dict) and "url" in item:
+                                        media_urls.append(item["url"])
+                                    elif isinstance(item, str) and item.startswith("http"):
+                                        media_urls.append(item)
+                                        
+                            # Agar single dict hai
+                            elif isinstance(val, dict) and "url" in val:
+                                media_urls.append(val["url"])
+                                
+                            # Agar direct string mili
+                            elif isinstance(val, str) and val.startswith("http"):
+                                media_urls.append(val)
+                    
+                    # Agar link mil gaya toh bakwas APIs par time waste nahi karenge, loop tod do
+                    if media_urls:
+                        break 
+            except Exception:
+                continue # API down hai toh silently agli par switch karo
+
+        # Agar teeno APIs fail ho gayi
+        if not media_urls:
+            return jsonify({"status": False, "error": "Instagram API down hai ya link private account ka hai. Baad mein try karein."})
+
+        # --- Final Response Sending ---
         
-        # --- V8 API Response Handle Karna ---
-        if data.get("status") == "picker":
-            items = data.get("picker", [])
-            media_urls = [item.get("url") for item in items]
+        # Agar ek se zyada URLs aayi hain (Carousel/Post)
+        if len(media_urls) > 1:
             return jsonify({
                 "status": True,
                 "type": "carousel",
-                "media_urls": media_urls, 
+                "media_urls": media_urls,
                 "title": "Instagram Carousel",
                 "source_url": url
             })
-        
-        elif data.get("status") in ["redirect", "stream", "success", "tunnel"]:
-            media_url = data.get("url")
-            media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
+            
+        # Agar single URL aayi hai (Reel/Video/Photo)
+        else:
+            final_url = media_urls[0]
+            media_type = "video" if ".mp4" in final_url or "reel" in url.lower() else "image"
             return jsonify({
                 "status": True,
                 "type": media_type,
-                "media_url": media_url, 
+                "media_url": final_url,
                 "title": "Instagram Media",
                 "source_url": url
             })
-        else:
-            return jsonify({"status": False, "error": f"Media nikal nahi paya. API Status: {data.get('status', 'Unknown')}"})
 
     except Exception as e:
         return jsonify({"status": False, "error": f"Python Code Error: {str(e)}"}), 500
-        
 
 
 if __name__ == '__main__':
