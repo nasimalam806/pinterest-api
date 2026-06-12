@@ -207,9 +207,8 @@ def fetch_profile():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
-
 # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Reels, Posts, Stories)
+# 4. INSTAGRAM FETCH ENDPOINT (Cobalt V8 API Fix)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -218,55 +217,77 @@ def fetch_insta():
         return jsonify({"status": False, "error": "URL parameter is missing."}), 400
     
     try:
-        # Using open-source Cobalt API for Instagram scraping to bypass login walls
-        api_url = "https://api.cobalt.tools/api/json"
-        
+        # Nayi Cobalt V8 API ke strict headers
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
+        # V8 mein vQuality hat gaya hai, sirf url pass karna hota hai
         payload = {
-            "url": url,
-            "vQuality": "1080" # Highest quality
+            "url": url
         }
         
-        res = requests.post(api_url, json=payload, headers=headers, timeout=15)
+        # Cobalt V8 ke naye endpoints (Agar ek down hua to dusra try karega)
+        cobalt_instances = [
+            "https://api.cobalt.tools/",
+            "https://api.w0n.st/", 
+            "https://cobalt.wuk.sh/"
+        ]
         
-        if res.status_code == 200:
-            data = res.json()
+        res = None
+        for api_url in cobalt_instances:
+            try:
+                res = requests.post(api_url, json=payload, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    break # Agar response 200 OK hai, to loop rok do (Working server mil gaya)
+            except:
+                continue # Agar yeh server fail hua, to agla try karo
+                
+        # Agar saare servers fail ho gaye
+        if not res or res.status_code != 200:
+            error_msg = "Instagram API temporarily down hai."
+            if res:
+                try:
+                    error_msg = res.json().get("error", {}).get("message", f"API Blocked (Code: {res.status_code})")
+                except:
+                    error_msg = f"Status Code: {res.status_code}"
+            return jsonify({"status": False, "error": f"Bhai download fail ho gaya. Reason: {error_msg}"})
             
-            # Agar multiple images/videos (Carousel) hain
-            if data.get("status") == "picker":
-                items = data.get("picker", [])
-                media_urls = [item.get("url") for item in items]
-                return jsonify({
-                    "status": True,
-                    "type": "carousel",
-                    "media_urls": media_urls, # Array of URLs
-                    "title": "Instagram Carousel",
-                    "source_url": url
-                })
-            
-            # Agar single video/reel ya image hai
-            elif data.get("status") in ["redirect", "stream", "success"]:
-                media_url = data.get("url")
-                media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
-                return jsonify({
-                    "status": True,
-                    "type": media_type,
-                    "media_url": media_url, # Single URL
-                    "title": "Instagram Media",
-                    "source_url": url
-                })
-            else:
-                return jsonify({"status": False, "error": "Media extract nahi ho paya. Shayad account private hai."})
+        data = res.json()
+        
+        # --- V8 API Response Handle Karna ---
+        
+        # Agar multiple images/videos (Carousel/Album) hain
+        if data.get("status") == "picker":
+            items = data.get("picker", [])
+            media_urls = [item.get("url") for item in items]
+            return jsonify({
+                "status": True,
+                "type": "carousel",
+                "media_urls": media_urls, 
+                "title": "Instagram Carousel",
+                "source_url": url
+            })
+        
+        # Agar single video/reel ya image hai
+        elif data.get("status") in ["redirect", "stream", "success"]:
+            media_url = data.get("url")
+            media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
+            return jsonify({
+                "status": True,
+                "type": media_type,
+                "media_url": media_url, 
+                "title": "Instagram Media",
+                "source_url": url
+            })
         else:
-            return jsonify({"status": False, "error": "Instagram Downloader API temporarily down hai."})
+            return jsonify({"status": False, "error": "Media extract nahi ho paya. Shayad account private hai."})
 
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
+
 
 
 if __name__ == '__main__':
