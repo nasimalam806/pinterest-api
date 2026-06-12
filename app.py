@@ -207,7 +207,7 @@ def fetch_profile():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (V8 Final Fix & Cloudflare Bypass)
+# 4. INSTAGRAM FETCH ENDPOINT (Fresh Servers + High Timeout)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -216,19 +216,19 @@ def fetch_insta():
         return jsonify({"status": False, "error": "URL parameter is missing."}), 400
     
     try:
-        # V8 API ke liye alag-alag servers aur unke strictly matching origins
+        # Naye aur active Cobalt servers ki list
         cobalt_servers = [
             {"api": "https://api.cobalt.tools/", "origin": "https://cobalt.tools"},
-            {"api": "https://api.w0n.st/", "origin": "https://w0n.st"},
-            {"api": "https://cobalt.wuk.sh/", "origin": "https://cobalt.wuk.sh"}
+            {"api": "https://api.onlyme.life/", "origin": "https://onlyme.life"},
+            {"api": "https://cobalt.kwiatekmateusz.pl/", "origin": "https://cobalt.kwiatekmateusz.pl"},
+            {"api": "https://api.ziy.red/", "origin": "https://ziy.red"}
         ]
         
         payload = {"url": url}
         res = None
-        last_error = "Sabhi servers fail ho gaye."
+        last_error = "Sabhi servers down hain ya timeout ho gaye."
         
         for server in cobalt_servers:
-            # Har request ke sath frontend origin match karna zaroori hai V8 mein
             headers = {
                 "Accept": "application/json",
                 "Content-Type": "application/json",
@@ -238,24 +238,23 @@ def fetch_insta():
             }
             
             try:
-                res = requests.post(server["api"], json=payload, headers=headers, timeout=12)
+                # Timeout badha kar 25 seconds kar diya hai kyunki badi reels/carousel me time lagta hai
+                res = requests.post(server["api"], json=payload, headers=headers, timeout=25)
                 if res.status_code == 200:
                     break # Success! Loop se bahar niklo
                 else:
-                    # Agar error aata hai to debug ke liye save karo
                     last_error = f"Server {server['api']} Error {res.status_code}: {res.text[:100]}"
             except Exception as e:
                 last_error = f"Server {server['api']} timeout ya connect nahi hua."
                 continue
                 
-        # Agar saare servers fail ho gaye 200 OK dene mein
+        # Agar saare servers fail ho gaye
         if not res or res.status_code != 200:
             return jsonify({"status": False, "error": f"Bhai download fail ho gaya. Detail: {last_error}"})
             
         data = res.json()
         
-        # --- V8 API Response Handle Karna (Added 'tunnel') ---
-        
+        # --- V8 API Response Handle Karna ---
         if data.get("status") == "picker":
             items = data.get("picker", [])
             media_urls = [item.get("url") for item in items]
@@ -267,7 +266,6 @@ def fetch_insta():
                 "source_url": url
             })
         
-        # V8 mein proxied content ke liye 'tunnel' use hota hai
         elif data.get("status") in ["redirect", "stream", "success", "tunnel"]:
             media_url = data.get("url")
             media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
@@ -283,7 +281,6 @@ def fetch_insta():
 
     except Exception as e:
         return jsonify({"status": False, "error": f"Python Code Error: {str(e)}"}), 500
-
 
 
 if __name__ == '__main__':
