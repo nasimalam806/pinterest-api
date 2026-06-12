@@ -205,85 +205,113 @@ def fetch_profile():
         })
         
     except Exception as e:
-        return jsonify({"status": False, "error": str(e)}), 500# ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Crash Fix + Carousel Fix)
+        return jsonify({"status": False, "error": str(e)}), 500
+        # ==========================================
+# 4. INSTAGRAM FETCH ENDPOINT (Hybrid: yt-dlp + Backup APIs)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
     url = request.args.get('url')
     if not url:
-        # Yahan 400 ki jagah 200 bheja hai taaki bot JSON parse kar sake bina crash hue
         return jsonify({"status": False, "error": "URL parameter is missing."}), 200
     
+    media_urls = []
+    title = "Instagram Media"
+    
+    # --- STEP 1: Pehle yt-dlp se try karo (Best Quality) ---
     try:
         import yt_dlp
-        
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'skip_download': True,
-            'extract_flat': False, # Carousel ke saare parts ko theek se nikalne ke liye
-            'format': 'best',
-            # iPhone ka header use kar rahe hain taaki Render IP jaldi block na ho
+            'extract_flat': False,
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
             }
         }
-        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-            except Exception as e:
-                # 🔥 YAHI MAIN FIX HAI: Agar yt-dlp block hua, toh 500 Crash ki jagah clean error jayega
-                return jsonify({
-                    "status": False, 
-                    "error": "Instagram ne block kiya hai. Shayad reel private hai ya temporary server block hai."
-                }), 200
+            info = ydl.extract_info(url, download=False)
+            title = info.get("title", "Instagram Media")
             
-            media_urls = []
-            
-            # --- CAROUSEL POST FIX ---
-            # Agar multiple media hain (Playlist/Carousel)
             if 'entries' in info:
                 for entry in info['entries']:
                     if entry and entry.get('url'):
                         media_urls.append(entry.get('url'))
-                    # Kabhi kabhi URL formats ke andar chhupi hoti hai
                     elif entry and 'formats' in entry and len(entry['formats']) > 0:
                         media_urls.append(entry['formats'][-1].get('url'))
-                        
-            # Agar single post/reel hai
             elif info.get('url'):
                 media_urls.append(info.get('url'))
                 
-            # Agar empty reh gaya
-            if not media_urls:
-                return jsonify({"status": False, "error": "Bhai media extract nahi ho paya is post se."}), 200
-                
-            # --- FINAL RESPONSE ---
-            if len(media_urls) > 1:
-                return jsonify({
-                    "status": True,
-                    "type": "carousel",
-                    "media_urls": media_urls,
-                    "title": info.get("title", "Instagram Carousel"),
-                    "source_url": url
-                }), 200
-            else:
-                final_url = media_urls[0]
-                media_type = "video" if ".mp4" in final_url or info.get('ext') == 'mp4' else "image"
-                return jsonify({
-                    "status": True,
-                    "type": media_type,
-                    "media_url": final_url,
-                    "title": info.get("title", "Instagram Media"),
-                    "source_url": url
-                }), 200
-                
-    except ImportError:
-        return jsonify({"status": False, "error": "Server par 'yt-dlp' install nahi hai."}), 200
-    except Exception as e:
-        return jsonify({"status": False, "error": f"Code Error: {str(e)}"}), 200
+    except Exception:
+        # Agar block hua toh hum error return nahi karenge, backup API par jayenge
+        pass
+
+    # --- STEP 2: Agar yt-dlp block ho gaya, toh External Proxy APIs use karo ---
+    if not media_urls:
+        # Nayi aur active APIs jo proxies use karti hain
+        backup_apis = [
+            f"https://api.siputzx.my.id/api/d/igdl?url={url}",
+            f"https://api.vreden.my.id/api/igdownload?url={url}",
+            f"https://btch.us.kg/download/igdl?url={url}"
+        ]
+        
+        for api_url in backup_apis:
+            try:
+                res = requests.get(api_url, timeout=15)
+                if res.status_code == 200:
+                    data = res.json()
+                    
+                    # Universal Parser
+                    for key in ["data", "result", "url", "media", "BK9"]:
+                        if key in data:
+                            val = data[key]
+                            if isinstance(val, list):
+                                for item in val:
+                                    if isinstance(item, dict) and "url" in item:
+                                        media_urls.append(item["url"])
+                                    elif isinstance(item, str) and item.startswith("http"):
+                                        media_urls.append(item)
+                            elif isinstance(val, dict) and "url" in val:
+                                media_urls.append(val["url"])
+                            elif isinstance(val, str) and val.startswith("http"):
+                                media_urls.append(val)
+                    
+                    # Agar kisi ek API se link mil gaya toh loop break kardo
+                    if media_urls:
+                        break 
+            except Exception:
+                continue
+
+    # --- STEP 3: Final check aur response bhejna ---
+    if not media_urls:
+        return jsonify({
+            "status": False, 
+            "error": "Instagram ne server ko completely block kar diya hai aur backup APIs bhi fail ho gayi. Baad mein try karein."
+        }), 200
+
+    # Clean duplicates while keeping order (Carousel ke time useful hai)
+    media_urls = list(dict.fromkeys(media_urls))
+
+    if len(media_urls) > 1:
+        return jsonify({
+            "status": True,
+            "type": "carousel",
+            "media_urls": media_urls,
+            "title": title,
+            "source_url": url
+        }), 200
+    else:
+        final_url = media_urls[0]
+        media_type = "video" if ".mp4" in final_url else "image"
+        return jsonify({
+            "status": True,
+            "type": media_type,
+            "media_url": final_url,
+            "title": title,
+            "source_url": url
+        }), 200
+
 
 
 
