@@ -208,7 +208,7 @@ def fetch_profile():
         return jsonify({"status": False, "error": str(e)}), 500
 
 # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Cobalt V8 API Fix)
+# 4. INSTAGRAM FETCH ENDPOINT (V8 Final Fix & Cloudflare Bypass)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -217,49 +217,46 @@ def fetch_insta():
         return jsonify({"status": False, "error": "URL parameter is missing."}), 400
     
     try:
-        # Nayi Cobalt V8 API ke strict headers
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        
-        # V8 mein vQuality hat gaya hai, sirf url pass karna hota hai
-        payload = {
-            "url": url
-        }
-        
-        # Cobalt V8 ke naye endpoints (Agar ek down hua to dusra try karega)
-        cobalt_instances = [
-            "https://api.cobalt.tools/",
-            "https://api.w0n.st/", 
-            "https://cobalt.wuk.sh/"
+        # V8 API ke liye alag-alag servers aur unke strictly matching origins
+        cobalt_servers = [
+            {"api": "https://api.cobalt.tools/", "origin": "https://cobalt.tools"},
+            {"api": "https://api.w0n.st/", "origin": "https://w0n.st"},
+            {"api": "https://cobalt.wuk.sh/", "origin": "https://cobalt.wuk.sh"}
         ]
         
+        payload = {"url": url}
         res = None
-        for api_url in cobalt_instances:
+        last_error = "Sabhi servers fail ho gaye."
+        
+        for server in cobalt_servers:
+            # Har request ke sath frontend origin match karna zaroori hai V8 mein
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Origin": server["origin"],
+                "Referer": server["origin"] + "/",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            }
+            
             try:
-                res = requests.post(api_url, json=payload, headers=headers, timeout=10)
+                res = requests.post(server["api"], json=payload, headers=headers, timeout=12)
                 if res.status_code == 200:
-                    break # Agar response 200 OK hai, to loop rok do (Working server mil gaya)
-            except:
-                continue # Agar yeh server fail hua, to agla try karo
+                    break # Success! Loop se bahar niklo
+                else:
+                    # Agar error aata hai to debug ke liye save karo
+                    last_error = f"Server {server['api']} Error {res.status_code}: {res.text[:100]}"
+            except Exception as e:
+                last_error = f"Server {server['api']} timeout ya connect nahi hua."
+                continue
                 
-        # Agar saare servers fail ho gaye
+        # Agar saare servers fail ho gaye 200 OK dene mein
         if not res or res.status_code != 200:
-            error_msg = "Instagram API temporarily down hai."
-            if res:
-                try:
-                    error_msg = res.json().get("error", {}).get("message", f"API Blocked (Code: {res.status_code})")
-                except:
-                    error_msg = f"Status Code: {res.status_code}"
-            return jsonify({"status": False, "error": f"Bhai download fail ho gaya. Reason: {error_msg}"})
+            return jsonify({"status": False, "error": f"Bhai download fail ho gaya. Detail: {last_error}"})
             
         data = res.json()
         
-        # --- V8 API Response Handle Karna ---
+        # --- V8 API Response Handle Karna (Added 'tunnel') ---
         
-        # Agar multiple images/videos (Carousel/Album) hain
         if data.get("status") == "picker":
             items = data.get("picker", [])
             media_urls = [item.get("url") for item in items]
@@ -271,8 +268,8 @@ def fetch_insta():
                 "source_url": url
             })
         
-        # Agar single video/reel ya image hai
-        elif data.get("status") in ["redirect", "stream", "success"]:
+        # V8 mein proxied content ke liye 'tunnel' use hota hai
+        elif data.get("status") in ["redirect", "stream", "success", "tunnel"]:
             media_url = data.get("url")
             media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
             return jsonify({
@@ -283,11 +280,10 @@ def fetch_insta():
                 "source_url": url
             })
         else:
-            return jsonify({"status": False, "error": "Media extract nahi ho paya. Shayad account private hai."})
+            return jsonify({"status": False, "error": f"Media nikal nahi paya. API Status: {data.get('status', 'Unknown')}"})
 
     except Exception as e:
-        return jsonify({"status": False, "error": str(e)}), 500
-
+        return jsonify({"status": False, "error": f"Python Code Error: {str(e)}"}), 500
 
 
 if __name__ == '__main__':
