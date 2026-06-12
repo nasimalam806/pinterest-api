@@ -206,7 +206,6 @@ def fetch_profile():
         
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-
 # ==========================================
 # 4. INSTAGRAM FETCH ENDPOINT (Fresh APIs + Universal Parser)
 # ==========================================
@@ -290,6 +289,7 @@ def fetch_insta():
 
     except Exception as e:
         return jsonify({"status": False, "error": f"Python Code Error: {str(e)}"}), 500
+
 
 
 if __name__ == '__main__':
