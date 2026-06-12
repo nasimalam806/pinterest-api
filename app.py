@@ -205,65 +205,86 @@ def fetch_profile():
         })
         
     except Exception as e:
-        return jsonify({"status": False, "error": str(e)}), 500
-# ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (yt-dlp Permanent Solution)
+        return jsonify({"status": False, "error": str(e)}), 500# ==========================================
+# 4. INSTAGRAM FETCH ENDPOINT (Crash Fix + Carousel Fix)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
     url = request.args.get('url')
     if not url:
-        return jsonify({"status": False, "error": "URL parameter is missing."}), 400
+        # Yahan 400 ki jagah 200 bheja hai taaki bot JSON parse kar sake bina crash hue
+        return jsonify({"status": False, "error": "URL parameter is missing."}), 200
     
     try:
-        # Import yt-dlp (Ensure pip install yt-dlp is done)
         import yt_dlp
         
-        # yt-dlp ki settings
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
-            'skip_download': True, # Hum sirf direct link chahte hain, server pe save nahi karna
+            'skip_download': True,
+            'extract_flat': False, # Carousel ke saare parts ko theek se nikalne ke liye
             'format': 'best',
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            # iPhone ka header use kar rahe hain taaki Render IP jaldi block na ho
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+            }
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Metadata aur direct link extract karo
-            info = ydl.extract_info(url, download=False)
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as e:
+                # 🔥 YAHI MAIN FIX HAI: Agar yt-dlp block hua, toh 500 Crash ki jagah clean error jayega
+                return jsonify({
+                    "status": False, 
+                    "error": "Instagram ne block kiya hai. Shayad reel private hai ya temporary server block hai."
+                }), 200
             
-            # Agar multiple posts/carousel hain
+            media_urls = []
+            
+            # --- CAROUSEL POST FIX ---
+            # Agar multiple media hain (Playlist/Carousel)
             if 'entries' in info:
-                media_urls = [entry.get('url') for entry in info['entries'] if entry.get('url')]
-                if media_urls:
-                    return jsonify({
-                        "status": True,
-                        "type": "carousel",
-                        "media_urls": media_urls,
-                        "title": info.get("title", "Instagram Carousel"),
-                        "source_url": url
-                    })
-            
-            # Agar single reel, video ya image hai
-            media_url = info.get('url')
-            if media_url:
-                # Agar extension mp4 hai ya video codec majood hai toh wo video hai
-                media_type = "video" if info.get('ext') == 'mp4' or info.get('vcodec') != 'none' else "image"
+                for entry in info['entries']:
+                    if entry and entry.get('url'):
+                        media_urls.append(entry.get('url'))
+                    # Kabhi kabhi URL formats ke andar chhupi hoti hai
+                    elif entry and 'formats' in entry and len(entry['formats']) > 0:
+                        media_urls.append(entry['formats'][-1].get('url'))
+                        
+            # Agar single post/reel hai
+            elif info.get('url'):
+                media_urls.append(info.get('url'))
+                
+            # Agar empty reh gaya
+            if not media_urls:
+                return jsonify({"status": False, "error": "Bhai media extract nahi ho paya is post se."}), 200
+                
+            # --- FINAL RESPONSE ---
+            if len(media_urls) > 1:
+                return jsonify({
+                    "status": True,
+                    "type": "carousel",
+                    "media_urls": media_urls,
+                    "title": info.get("title", "Instagram Carousel"),
+                    "source_url": url
+                }), 200
+            else:
+                final_url = media_urls[0]
+                media_type = "video" if ".mp4" in final_url or info.get('ext') == 'mp4' else "image"
                 return jsonify({
                     "status": True,
                     "type": media_type,
-                    "media_url": media_url,
+                    "media_url": final_url,
                     "title": info.get("title", "Instagram Media"),
                     "source_url": url
-                })
+                }), 200
                 
-        return jsonify({"status": False, "error": "Media nahi mila. Shayad account private hai."})
-        
     except ImportError:
-        return jsonify({"status": False, "error": "Server par 'yt-dlp' install nahi hai. Please run 'pip install yt-dlp'."}), 500
+        return jsonify({"status": False, "error": "Server par 'yt-dlp' install nahi hai."}), 200
     except Exception as e:
-        # Exact error Telegram bot pe bhejne ke liye string format use kar rahe hain
-        return jsonify({"status": False, "error": f"Instagram API Error: {str(e)}"}), 500
+        return jsonify({"status": False, "error": f"Code Error: {str(e)}"}), 200
+
 
 
 if __name__ == '__main__':
