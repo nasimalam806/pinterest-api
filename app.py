@@ -125,6 +125,8 @@ def fetch_pin():
             
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
+
+
 # ==========================================
 # 3. PINTEREST PROFILE ENDPOINT (Ultimate Fix)
 # ==========================================
@@ -138,7 +140,6 @@ def fetch_profile():
     url = f"https://www.pinterest.com/{username}/"
     
     try:
-        # Better Headers to avoid getting blocked by Pinterest
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -148,7 +149,6 @@ def fetch_profile():
         res = requests.get(url, headers=headers, timeout=10)
         html = res.text
         
-        # --- NAME EXTRACTION ---
         name = username
         title_match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', html) or \
                       re.search(r'<title>([^<]+)</title>', html)
@@ -158,12 +158,10 @@ def fetch_profile():
             if name.lower() == "pinterest": 
                 name = username
                 
-        # --- BIO EXTRACTION ---
         bio = ""
         bio_match = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']', html)
         if bio_match:
             bio = bio_match.group(1).replace('&quot;', '"').replace('&#39;', "'").strip()
-            # Remove default Pinterest text if user has no bio
             if "See what" in bio and "has discovered on Pinterest" in bio:
                 bio = ""
         
@@ -172,20 +170,16 @@ def fetch_profile():
             if about_match:
                 bio = about_match.group(1).replace('\\u0026', '&').replace('\\"', '"').replace('\\n', ' ').strip()
 
-        # --- PROFILE PIC ---
         pic_url = ""
         pic_match = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html)
         if pic_match:
-            # 🔥 YAHAN CHANGE KIYA HAI: URL Cleaner add kar diya gaya hai 🔥
             raw_pic = pic_match.group(1)
             pic_url = raw_pic.replace("\\/", "/").replace("&amp;", "&").replace("280x280", "originals").replace("736x", "originals")
 
-        # --- STATS (Followers, Following, Pins) ---
         followers = "0"
         following = "0"
         total_pins = "0"
         
-        # Using flexible Regex (re.IGNORECASE) to catch nested JSON stats safely
         f_match = re.search(r'"follower_?Count"\s*:\s*(\d+)', html, re.IGNORECASE)
         if f_match: followers = f_match.group(1)
         
@@ -195,7 +189,6 @@ def fetch_profile():
         p_match = re.search(r'"pin_?Count"\s*:\s*(\d+)', html, re.IGNORECASE)
         if p_match: total_pins = p_match.group(1)
 
-        # Fallback security: Agar sab 0 hai aur image bhi nahi mili, matlab page load hi nahi hua thik se
         if followers == "0" and following == "0" and total_pins == "0" and not pic_url:
             return jsonify({"status": False, "error": "Profile fetch nahi ho paayi. Shayad Pinterest ne block kiya hai ya user exist nahi karta."})
 
@@ -214,6 +207,67 @@ def fetch_profile():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 
+
+# ==========================================
+# 4. INSTAGRAM FETCH ENDPOINT (Reels, Posts, Stories)
+# ==========================================
+@app.route('/insta_fetch')
+def fetch_insta():
+    url = request.args.get('url')
+    if not url:
+        return jsonify({"status": False, "error": "URL parameter is missing."}), 400
+    
+    try:
+        # Using open-source Cobalt API for Instagram scraping to bypass login walls
+        api_url = "https://api.cobalt.tools/api/json"
+        
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        
+        payload = {
+            "url": url,
+            "vQuality": "1080" # Highest quality
+        }
+        
+        res = requests.post(api_url, json=payload, headers=headers, timeout=15)
+        
+        if res.status_code == 200:
+            data = res.json()
+            
+            # Agar multiple images/videos (Carousel) hain
+            if data.get("status") == "picker":
+                items = data.get("picker", [])
+                media_urls = [item.get("url") for item in items]
+                return jsonify({
+                    "status": True,
+                    "type": "carousel",
+                    "media_urls": media_urls, # Array of URLs
+                    "title": "Instagram Carousel",
+                    "source_url": url
+                })
+            
+            # Agar single video/reel ya image hai
+            elif data.get("status") in ["redirect", "stream", "success"]:
+                media_url = data.get("url")
+                media_type = "video" if "mp4" in media_url or "reel" in url.lower() else "image"
+                return jsonify({
+                    "status": True,
+                    "type": media_type,
+                    "media_url": media_url, # Single URL
+                    "title": "Instagram Media",
+                    "source_url": url
+                })
+            else:
+                return jsonify({"status": False, "error": "Media extract nahi ho paya. Shayad account private hai."})
+        else:
+            return jsonify({"status": False, "error": "Instagram Downloader API temporarily down hai."})
+
+    except Exception as e:
+        return jsonify({"status": False, "error": str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-
