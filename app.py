@@ -207,7 +207,7 @@ def fetch_profile():
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
 # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Fresh APIs + Universal Parser)
+# 4. INSTAGRAM FETCH ENDPOINT (yt-dlp Permanent Solution)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -216,80 +216,54 @@ def fetch_insta():
         return jsonify({"status": False, "error": "URL parameter is missing."}), 400
     
     try:
-        # Nayi, active aur unblocked APIs
-        apis_to_try = [
-            f"https://api.siputzx.my.id/api/d/igdl?url={url}",
-            f"https://api.vyturex.com/ig?url={url}",
-            f"https://api.nyxs.pw/dl/ig?url={url}"
-        ]
+        # Import yt-dlp (Ensure pip install yt-dlp is done)
+        import yt_dlp
         
-        media_urls = []
+        # yt-dlp ki settings
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True, # Hum sirf direct link chahte hain, server pe save nahi karna
+            'format': 'best',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        }
         
-        for api_url in apis_to_try:
-            try:
-                # Har API ko connect hone ke liye 15 seconds denge
-                res = requests.get(api_url, timeout=15)
-                if res.status_code == 200:
-                    data = res.json()
-                    
-                    # 🚀 UNIVERSAL PARSER: Ye har tarah ki API ko automatically handle kar lega
-                    for key in ["data", "result", "url", "media", "BK9"]:
-                        if key in data:
-                            val = data[key]
-                            
-                            # Agar multiple videos/images hain (List)
-                            if isinstance(val, list):
-                                for item in val:
-                                    if isinstance(item, dict) and "url" in item:
-                                        media_urls.append(item["url"])
-                                    elif isinstance(item, str) and item.startswith("http"):
-                                        media_urls.append(item)
-                                        
-                            # Agar single dict hai
-                            elif isinstance(val, dict) and "url" in val:
-                                media_urls.append(val["url"])
-                                
-                            # Agar direct string mili
-                            elif isinstance(val, str) and val.startswith("http"):
-                                media_urls.append(val)
-                    
-                    # Agar link mil gaya toh bakwas APIs par time waste nahi karenge, loop tod do
-                    if media_urls:
-                        break 
-            except Exception:
-                continue # API down hai toh silently agli par switch karo
-
-        # Agar teeno APIs fail ho gayi
-        if not media_urls:
-            return jsonify({"status": False, "error": "Instagram API down hai ya link private account ka hai. Baad mein try karein."})
-
-        # --- Final Response Sending ---
-        
-        # Agar ek se zyada URLs aayi hain (Carousel/Post)
-        if len(media_urls) > 1:
-            return jsonify({
-                "status": True,
-                "type": "carousel",
-                "media_urls": media_urls,
-                "title": "Instagram Carousel",
-                "source_url": url
-            })
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Metadata aur direct link extract karo
+            info = ydl.extract_info(url, download=False)
             
-        # Agar single URL aayi hai (Reel/Video/Photo)
-        else:
-            final_url = media_urls[0]
-            media_type = "video" if ".mp4" in final_url or "reel" in url.lower() else "image"
-            return jsonify({
-                "status": True,
-                "type": media_type,
-                "media_url": final_url,
-                "title": "Instagram Media",
-                "source_url": url
-            })
-
+            # Agar multiple posts/carousel hain
+            if 'entries' in info:
+                media_urls = [entry.get('url') for entry in info['entries'] if entry.get('url')]
+                if media_urls:
+                    return jsonify({
+                        "status": True,
+                        "type": "carousel",
+                        "media_urls": media_urls,
+                        "title": info.get("title", "Instagram Carousel"),
+                        "source_url": url
+                    })
+            
+            # Agar single reel, video ya image hai
+            media_url = info.get('url')
+            if media_url:
+                # Agar extension mp4 hai ya video codec majood hai toh wo video hai
+                media_type = "video" if info.get('ext') == 'mp4' or info.get('vcodec') != 'none' else "image"
+                return jsonify({
+                    "status": True,
+                    "type": media_type,
+                    "media_url": media_url,
+                    "title": info.get("title", "Instagram Media"),
+                    "source_url": url
+                })
+                
+        return jsonify({"status": False, "error": "Media nahi mila. Shayad account private hai."})
+        
+    except ImportError:
+        return jsonify({"status": False, "error": "Server par 'yt-dlp' install nahi hai. Please run 'pip install yt-dlp'."}), 500
     except Exception as e:
-        return jsonify({"status": False, "error": f"Python Code Error: {str(e)}"}), 500
-
+        # Exact error Telegram bot pe bhejne ke liye string format use kar rahe hain
+        return jsonify({"status": False, "error": f"Instagram API Error: {str(e)}"}), 500
 
 
 if __name__ == '__main__':
