@@ -206,8 +206,8 @@ def fetch_profile():
         
     except Exception as e:
         return jsonify({"status": False, "error": str(e)}), 500
-        # ==========================================
-# 4. INSTAGRAM FETCH ENDPOINT (Hybrid: yt-dlp + Backup APIs)
+# ==========================================
+# 4. INSTAGRAM FETCH ENDPOINT (Ensta - Guest Mode)
 # ==========================================
 @app.route('/insta_fetch')
 def fetch_insta():
@@ -215,103 +215,55 @@ def fetch_insta():
     if not url:
         return jsonify({"status": False, "error": "URL parameter is missing."}), 200
     
-    media_urls = []
-    title = "Instagram Media"
-    
-    # --- STEP 1: Pehle yt-dlp se try karo (Best Quality) ---
     try:
-        import yt_dlp
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'skip_download': True,
-            'extract_flat': False,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
-            }
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            title = info.get("title", "Instagram Media")
-            
-            if 'entries' in info:
-                for entry in info['entries']:
-                    if entry and entry.get('url'):
-                        media_urls.append(entry.get('url'))
-                    elif entry and 'formats' in entry and len(entry['formats']) > 0:
-                        media_urls.append(entry['formats'][-1].get('url'))
-            elif info.get('url'):
-                media_urls.append(info.get('url'))
-                
-    except Exception:
-        # Agar block hua toh hum error return nahi karenge, backup API par jayenge
-        pass
-
-    # --- STEP 2: Agar yt-dlp block ho gaya, toh External Proxy APIs use karo ---
-    if not media_urls:
-        # Nayi aur active APIs jo proxies use karti hain
-        backup_apis = [
-            f"https://api.siputzx.my.id/api/d/igdl?url={url}",
-            f"https://api.vreden.my.id/api/igdownload?url={url}",
-            f"https://btch.us.kg/download/igdl?url={url}"
-        ]
+        from ensta import Guest
+        import re
         
-        for api_url in backup_apis:
-            try:
-                res = requests.get(api_url, timeout=15)
-                if res.status_code == 200:
-                    data = res.json()
-                    
-                    # Universal Parser
-                    for key in ["data", "result", "url", "media", "BK9"]:
-                        if key in data:
-                            val = data[key]
-                            if isinstance(val, list):
-                                for item in val:
-                                    if isinstance(item, dict) and "url" in item:
-                                        media_urls.append(item["url"])
-                                    elif isinstance(item, str) and item.startswith("http"):
-                                        media_urls.append(item)
-                            elif isinstance(val, dict) and "url" in val:
-                                media_urls.append(val["url"])
-                            elif isinstance(val, str) and val.startswith("http"):
-                                media_urls.append(val)
-                    
-                    # Agar kisi ek API se link mil gaya toh loop break kardo
-                    if media_urls:
-                        break 
-            except Exception:
-                continue
-
-    # --- STEP 3: Final check aur response bhejna ---
-    if not media_urls:
-        return jsonify({
-            "status": False, 
-            "error": "Instagram ne server ko completely block kar diya hai aur backup APIs bhi fail ho gayi. Baad mein try karein."
-        }), 200
-
-    # Clean duplicates while keeping order (Carousel ke time useful hai)
-    media_urls = list(dict.fromkeys(media_urls))
-
-    if len(media_urls) > 1:
-        return jsonify({
-            "status": True,
-            "type": "carousel",
-            "media_urls": media_urls,
-            "title": title,
-            "source_url": url
-        }), 200
-    else:
-        final_url = media_urls[0]
-        media_type = "video" if ".mp4" in final_url else "image"
+        # Ensta ko chalane ke liye URL se "shortcode" nikalna zaroori hai
+        # Example: https://www.instagram.com/p/DZXoa7LIasL/ -> DZXoa7LIasL
+        match = re.search(r"(?:p|reel|tv|reels)/([^/?#&]+)", url)
+        if not match:
+            return jsonify({"status": False, "error": "Instagram link invalid hai ya shortcode nahi mil raha."}), 200
+        
+        shortcode = match.group(1)
+        
+        # Bina login wala Ensta instance (Guest Mode)
+        guest = Guest()
+        
+        # Post ki details fetch karne ka try
+        # Note: Agar Instagram Guest mode ko block karega, toh yahan Exception aayega
+        post_data = guest.post(shortcode)
+        
+        if not post_data:
+            return jsonify({"status": False, "error": "Ensta ne data return nahi kiya. Shayad Login required hai."}), 200
+            
+        # Video ya Image URL nikalna
+        media_url = ""
+        media_type = "image"
+        
+        # Ensta object ke attributes check kar rahe hain
+        if hasattr(post_data, 'video_url') and post_data.video_url:
+            media_url = post_data.video_url
+            media_type = "video"
+        elif hasattr(post_data, 'display_url') and post_data.display_url:
+            media_url = post_data.display_url
+            
+        if not media_url:
+            return jsonify({"status": False, "error": "Post mil gayi par media URL extract nahi ho paya."}), 200
+            
         return jsonify({
             "status": True,
             "type": media_type,
-            "media_url": final_url,
-            "title": title,
+            "media_url": media_url,
+            "title": f"Insta Media: {shortcode}",
             "source_url": url
         }), 200
-
+        
+    except ImportError:
+        return jsonify({"status": False, "error": "Server par 'ensta' install nahi hai. Pehle 'pip install ensta' run karein."}), 200
+    except Exception as e:
+        # Agar block hota hai ya Ensta fail hota hai, toh error JSON mein aayega, server crash nahi hoga
+        return jsonify({"status": False, "error": f"Ensta failed: {str(e)}"}), 200
 
 
 
